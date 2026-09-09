@@ -1,510 +1,328 @@
 
 import streamlit as st
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.patches import Arc
+import numpy as np, pandas as pd, matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 import random, math, time
 
-st.set_page_config(page_title="Ornamental Genome AI", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="ORNAMENTAL GENOME AI 2.0", page_icon="🧬", layout="wide")
 
-# -----------------------------
-# ORNAMENTAL GENOME
-# -----------------------------
-GENE_NAMES = [
-    "motif", "scale", "rotation", "repeats", "spacing",
-    "symmetry", "radius", "density", "extra_probability"
-]
-MOTIFS = ["Қошқар мүйіз", "Тұмарша", "Геометриялық"]
-SYMMETRIES = ["Линейная", "Зеркальная", "Центральная", "Радиальная"]
+st.markdown("""
+<style>
+.block-container{max-width:1280px;padding-top:1.3rem}
+.hero{padding:24px;border-radius:20px;border:1px solid #ddd;margin-bottom:18px}
+.hero h1{margin:0 0 8px 0}
+.badge{display:inline-block;border:1px solid #ccc;border-radius:999px;padding:4px 9px;margin-right:5px}
+</style>
+<div class="hero">
+<h1>🧬 ORNAMENTAL GENOME AI 2.0</h1>
+<p>Эволюционная лаборатория генеративного дизайна казахского орнамента</p>
+<span class="badge">Creative Industry</span>
+<span class="badge">Genetic Algorithm</span>
+<span class="badge">Machine Learning</span>
+</div>
+""", unsafe_allow_html=True)
 
-def clamp(x, lo, hi):
-    return max(lo, min(hi, x))
+CATEGORIES = {
+    "Зооморфные":["Қошқар мүйіз","Қос мүйіз","Түйетабан","Құстаңдай","Қазмойын"],
+    "Растительные":["Гүл","Жапырақ"],
+    "Геометрические":["Тұмарша","Ирек"],
+    "Космогонические":["Жұлдыз","Шұғыла","Төртқұлақ","Бітпес"]
+}
+MOTIFS=[m for v in CATEGORIES.values() for m in v]
+SYMS=["Линейная","Зеркальная","Центральная","Радиальная"]
+LAYOUTS=["Бордюр","Розетка","Центральная","Сетчатая"]
+GENES=["motif","scale","rotation","repeats","spacing","symmetry","radius","density","curvature","secondary","layout"]
 
-def random_genome():
-    return {
-        "motif": random.randrange(len(MOTIFS)),
-        "scale": random.uniform(0.45, 1.25),
-        "rotation": random.uniform(0, 360),
-        "repeats": random.randint(4, 16),
-        "spacing": random.uniform(0.55, 1.8),
-        "symmetry": random.randrange(len(SYMMETRIES)),
-        "radius": random.uniform(1.0, 4.5),
-        "density": random.uniform(0.35, 1.0),
-        "extra_probability": random.uniform(0, 0.65)
-    }
+def clamp(x,a,b): return max(a,min(b,x))
+def rot(x,y,a):
+    a=np.deg2rad(a); return x*np.cos(a)-y*np.sin(a), x*np.sin(a)+y*np.cos(a)
+
+def genome(motif=None):
+    return dict(
+        motif=MOTIFS.index(motif) if motif in MOTIFS else random.randrange(len(MOTIFS)),
+        scale=random.uniform(.55,1.25), rotation=random.uniform(0,360),
+        repeats=random.randint(4,18), spacing=random.uniform(.65,1.6),
+        symmetry=random.randrange(4), radius=random.uniform(1.5,4),
+        density=random.uniform(.45,.95), curvature=random.uniform(.6,1.35),
+        secondary=random.uniform(0,.6), layout=random.randrange(4)
+    )
 
 def repair(g):
-    g["motif"] = int(clamp(round(g["motif"]), 0, len(MOTIFS)-1))
-    g["scale"] = clamp(float(g["scale"]), 0.25, 1.6)
-    g["rotation"] = float(g["rotation"]) % 360
-    g["repeats"] = int(clamp(round(g["repeats"]), 3, 24))
-    g["spacing"] = clamp(float(g["spacing"]), 0.35, 2.4)
-    g["symmetry"] = int(clamp(round(g["symmetry"]), 0, len(SYMMETRIES)-1))
-    g["radius"] = clamp(float(g["radius"]), 0.8, 5.0)
-    g["density"] = clamp(float(g["density"]), 0.2, 1.0)
-    g["extra_probability"] = clamp(float(g["extra_probability"]), 0, 0.9)
+    g=dict(g)
+    g["motif"]=int(clamp(round(g["motif"]),0,len(MOTIFS)-1))
+    g["scale"]=clamp(float(g["scale"]),.35,1.55)
+    g["rotation"]=float(g["rotation"])%360
+    g["repeats"]=int(clamp(round(g["repeats"]),3,24))
+    g["spacing"]=clamp(float(g["spacing"]),.45,2.1)
+    g["symmetry"]=int(clamp(round(g["symmetry"]),0,3))
+    g["radius"]=clamp(float(g["radius"]),1,5)
+    g["density"]=clamp(float(g["density"]),.25,1)
+    g["curvature"]=clamp(float(g["curvature"]),.35,1.65)
+    g["secondary"]=clamp(float(g["secondary"]),0,.9)
+    g["layout"]=int(clamp(round(g["layout"]),0,3))
     return g
 
-def vector(g):
-    return np.array([g[k] for k in GENE_NAMES], dtype=float)
-
-# -----------------------------
-# FITNESS / RULE-BASED AI
-# -----------------------------
-def metrics(g):
-    # Symmetry quality: the selected symmetry and compatible repeat count.
-    if g["symmetry"] == 0:
-        symmetry = 0.55 + 0.20 * (1 - abs(g["rotation"] % 90 - 45) / 45)
-    elif g["symmetry"] == 1:
-        symmetry = 1 - min(abs((g["rotation"] % 180) - 90) / 180, 0.45)
-    elif g["symmetry"] == 2:
-        symmetry = 0.72 + 0.28 * (1 if g["repeats"] % 2 == 0 else 0.45)
+def motif_paths(name,s=1,c=1):
+    p=[]
+    if name=="Қошқар мүйіз":
+        t=np.linspace(0,2.3*np.pi,150); r=s*(.04+.105*t*c)
+        x=r*np.cos(t); y=r*np.sin(t); p=[(x,y),(-x,y)]
+    elif name=="Қос мүйіз":
+        t=np.linspace(0,2*np.pi,130); r=s*(.04+.09*t*c)
+        x=r*np.cos(t); y=r*np.sin(t); p=[(x-.25*s,y),(-x+.25*s,y)]
+    elif name=="Түйетабан":
+        x=np.array([-.65,-.25,0,.25,.65,.35,0,-.35,-.65])*s
+        y=np.array([0,.45,.18,.45,0,-.4,-.12,-.4,0])*s; p=[(x,y)]
+    elif name=="Құстаңдай":
+        x=np.array([-.8,-.25,0,.25,.8,.35,0,-.35,-.8])*s
+        y=np.array([0,.2,.65,.2,0,-.18,-.5,-.18,0])*s; p=[(x,y)]
+    elif name=="Қазмойын":
+        t=np.linspace(-np.pi/2,1.3*np.pi,130)
+        p=[(.45*s*np.cos(t)+.18*s*np.sin(2*t)*c,.62*s*np.sin(t))]
+    elif name=="Гүл":
+        t=np.linspace(0,2*np.pi,220); r=s*(.48+.22*np.cos(6*t)); p=[(r*np.cos(t),r*np.sin(t))]
+    elif name=="Жапырақ":
+        t=np.linspace(0,np.pi,120); x=s*np.cos(t); y=.48*s*np.sin(t)
+        p=[(x,y),(x,-y),(np.array([-s,s]),np.array([0,0]))]
+    elif name=="Тұмарша":
+        p=[(np.array([0,.72,-.72,0])*s,np.array([.78,-.58,-.58,.78])*s),
+           (np.array([0,.28,-.28,0])*s,np.array([.28,-.22,-.22,.28])*s)]
+    elif name=="Ирек":
+        x=np.linspace(-1,1,160)*s; y=.32*s*np.sin(3*np.pi*x/max(s,.01)); p=[(x,y)]
+    elif name=="Жұлдыз":
+        pts=[]
+        for i in range(16):
+            rr=s*(.85 if i%2==0 else .34); a=np.pi*i/8; pts.append((rr*np.cos(a),rr*np.sin(a)))
+        pts.append(pts[0]); p=[(np.array([q[0] for q in pts]),np.array([q[1] for q in pts]))]
+    elif name=="Шұғыла":
+        for i in range(12):
+            a=2*np.pi*i/12; p.append((np.array([.18,.9])*s*np.cos(a),np.array([.18,.9])*s*np.sin(a)))
+    elif name=="Төртқұлақ":
+        for a in [0,90,180,270]:
+            t=np.linspace(0,1.7*np.pi,90); r=s*(.05+.1*t)
+            x,y=rot(r*np.cos(t)+.22*s,r*np.sin(t),a); p.append((x,y))
     else:
-        divisors = [4, 6, 8, 12, 16]
-        d = min(abs(g["repeats"] - x) for x in divisors)
-        symmetry = clamp(1 - d / 8, 0, 1)
+        t=np.linspace(-1,1,180); x=s*t; y=.33*s*np.sin(2.5*np.pi*t); p=[(x,y),(x,-y)]
+    return p
 
-    # Diversity: medium probability of extra elements + moderate scale variation.
-    diversity = 1 - abs(g["extra_probability"] - 0.35) / 0.65
-    diversity *= 1 - 0.25 * abs(g["repeats"] - 12) / 12
-    diversity = clamp(diversity, 0, 1)
+def draw_one(ax,name,x,y,a,s,c,mirror=False,lw=1.8):
+    for px,py in motif_paths(name,s,c):
+        if mirror: px=-px
+        xx,yy=rot(np.array(px),np.array(py),a)
+        ax.plot(xx+x,yy+y,linewidth=lw)
 
-    # Composition: target filling zone.
-    fill_proxy = (g["repeats"] * g["scale"] * g["density"]) / (12 * 0.9)
-    composition = math.exp(-abs(fill_proxy - 1.0) * 1.35)
-    composition *= math.exp(-abs(g["spacing"] - 1.1) * 0.65)
-    composition = clamp(composition, 0, 1)
-
-    # Intersection penalty: dense large motifs at small spacing are undesirable.
-    crowd = (g["scale"] * g["density"] * g["repeats"]) / max(g["spacing"], 0.2)
-    intersections = clamp(1 - max(0, crowd - 8) / 16, 0, 1)
-
-    # Constraints / plausibility.
-    constraints = 1.0
-    if g["radius"] < 1.1 and g["repeats"] > 15:
-        constraints *= 0.65
-    if g["scale"] > 1.35 and g["spacing"] < 0.7:
-        constraints *= 0.55
-
-    return {
-        "symmetry": float(clamp(symmetry, 0, 1)),
-        "diversity": float(clamp(diversity, 0, 1)),
-        "composition": float(clamp(composition, 0, 1)),
-        "non_intersection": float(clamp(intersections, 0, 1)),
-        "constraints": float(clamp(constraints, 0, 1))
-    }
-
-def rule_fitness(g, weights):
-    m = metrics(g)
-    return sum(weights[k] * m[k] for k in weights), m
-
-def train_ai_if_possible():
-    labels = st.session_state.get("labels", [])
-    if len(labels) < 6:
-        return None
-    X = np.vstack([vector(item["genome"]) for item in labels])
-    y = np.array([item["rating"] for item in labels], dtype=float)
-    if len(np.unique(y)) < 2:
-        return None
-    model = RandomForestRegressor(
-        n_estimators=120, random_state=42, min_samples_leaf=1
-    )
-    model.fit(X, y)
-    return model
-
-def ai_score(g, model):
-    if model is None:
-        return None
-    return float(model.predict(vector(g).reshape(1, -1))[0] / 5.0)
-
-def fitness(g, weights, ai_model=None, ai_weight=0.25):
-    base, m = rule_fitness(g, weights)
-    a = ai_score(g, ai_model)
-    if a is None:
-        return base, m, None
-    return (1-ai_weight)*base + ai_weight*a, m, a
-
-# -----------------------------
-# GENETIC ALGORITHM
-# -----------------------------
-def tournament(pop, scores, k=3):
-    ids = random.sample(range(len(pop)), k=min(k, len(pop)))
-    return pop[max(ids, key=lambda i: scores[i])]
-
-def crossover(a, b):
-    c = {}
-    for k in GENE_NAMES:
-        if k in ["motif", "symmetry", "repeats"]:
-            c[k] = a[k] if random.random() < 0.5 else b[k]
-        else:
-            alpha = random.random()
-            c[k] = alpha*a[k] + (1-alpha)*b[k]
-    return repair(c)
-
-def mutate(g, p):
-    g = dict(g)
-    for k in GENE_NAMES:
-        if random.random() < p:
-            if k == "motif":
-                g[k] = random.randrange(len(MOTIFS))
-            elif k == "symmetry":
-                g[k] = random.randrange(len(SYMMETRIES))
-            elif k == "repeats":
-                g[k] += random.choice([-3,-2,-1,1,2,3])
-            elif k == "rotation":
-                g[k] += random.uniform(-55, 55)
-            elif k == "scale":
-                g[k] += random.uniform(-0.22, 0.22)
-            elif k == "spacing":
-                g[k] += random.uniform(-0.35, 0.35)
-            elif k == "radius":
-                g[k] += random.uniform(-0.8, 0.8)
-            else:
-                g[k] += random.uniform(-0.20, 0.20)
-    return repair(g)
-
-def evolve(pop_size, generations, mutation_rate, weights, ai_model, ai_weight):
-    pop = [random_genome() for _ in range(pop_size)]
-    history = []
-    snapshots = []
-
-    for gen in range(generations + 1):
-        evaluated = [fitness(g, weights, ai_model, ai_weight) for g in pop]
-        scores = np.array([x[0] for x in evaluated])
-        order = np.argsort(scores)[::-1]
-        best = dict(pop[order[0]])
-        history.append({
-            "generation": gen,
-            "best": float(scores.max()),
-            "mean": float(scores.mean()),
-            "min": float(scores.min())
-        })
-        if gen in {0, generations//2, generations}:
-            snapshots.append((gen, best, float(scores.max())))
-
-        if gen == generations:
-            break
-
-        elites = [dict(pop[i]) for i in order[:max(2, pop_size//10)]]
-        new_pop = elites[:]
-        while len(new_pop) < pop_size:
-            p1 = tournament(pop, scores)
-            p2 = tournament(pop, scores)
-            child = crossover(p1, p2)
-            child = mutate(child, mutation_rate)
-            new_pop.append(child)
-        pop = new_pop[:pop_size]
-
-    final_scores = [fitness(g, weights, ai_model, ai_weight)[0] for g in pop]
-    best_idx = int(np.argmax(final_scores))
-    return pop[best_idx], history, snapshots, pop, final_scores
-
-# -----------------------------
-# DRAWING ENGINE
-# -----------------------------
-def motif_points(name, scale=1.0):
-    t = np.linspace(0, 2*np.pi, 180)
-    if name == "Қошқар мүйіз":
-        # Stylized ram-horn spiral curve.
-        r = scale*(0.12 + 0.12*t)
-        x = r*np.cos(t)
-        y = r*np.sin(t)
-        return x, y
-    if name == "Тұмарша":
-        x = np.array([0, 0.55, 0, -0.55, 0])*scale
-        y = np.array([0.7, 0, -0.7, 0, 0.7])*scale
-        return x, y
-    # geometric motif
-    x = np.array([-0.5,0,0.5,0,-0.5])*scale
-    y = np.array([0,0.5,0,-0.5,0])*scale
-    return x, y
-
-def transform(x, y, angle_deg, tx, ty, mirror=False):
-    if mirror:
-        x = -x
-    a = np.deg2rad(angle_deg)
-    xr = x*np.cos(a) - y*np.sin(a) + tx
-    yr = x*np.sin(a) + y*np.cos(a) + ty
-    return xr, yr
-
-def draw_ornament(g, ax=None, title=None):
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(6,6))
-    else:
-        fig = ax.figure
-
-    name = MOTIFS[g["motif"]]
-    n = g["repeats"]
-    sym = g["symmetry"]
-    x0, y0 = motif_points(name, g["scale"])
-
-    # Placement strategy follows the genome's symmetry gene.
-    if sym == 0:  # linear
-        xs = np.linspace(-g["radius"], g["radius"], n)
-        for i, x in enumerate(xs):
-            y = 0.45*np.sin(i*0.8 + np.deg2rad(g["rotation"]))
-            xr, yr = transform(x0, y0, g["rotation"] + i*8, x, y)
-            ax.plot(xr, yr, linewidth=2)
-    elif sym == 1:  # mirror
-        half = max(2, n//2)
-        xs = np.linspace(0.4, g["radius"], half)
-        for i, x in enumerate(xs):
-            ang = g["rotation"] + i*9
-            for sign, mir in [(1,False),(-1,True)]:
-                xr, yr = transform(x0, y0, ang, sign*x, 0.55*np.sin(i), mir)
-                ax.plot(xr, yr, linewidth=2)
-    elif sym == 2:  # central
-        half = max(2, n//2)
-        for i in range(half):
-            theta = 2*np.pi*i/half
-            x, y = g["radius"]*np.cos(theta), g["radius"]*np.sin(theta)
-            xr, yr = transform(x0, y0, g["rotation"] + np.degrees(theta), x, y)
-            ax.plot(xr, yr, linewidth=2)
-            xr, yr = transform(x0, y0, g["rotation"] + np.degrees(theta)+180, -x, -y, True)
-            ax.plot(xr, yr, linewidth=2)
-    else:  # radial
+def draw(g,title=None):
+    g=repair(g); fig,ax=plt.subplots(figsize=(6,6))
+    name=MOTIFS[g["motif"]]; n=g["repeats"]; r=g["radius"]; s=g["scale"]; lay=LAYOUTS[g["layout"]]
+    if lay=="Бордюр":
+        for i,x in enumerate(np.linspace(-r,r,n)):
+            draw_one(ax,name,x,0,g["rotation"]+(i%2)*180,s*.58,g["curvature"],i%2==1)
+    elif lay=="Розетка":
         for i in range(n):
-            theta = 2*np.pi*i/n
-            r = g["radius"]*(0.55 + 0.45*g["density"])
-            x, y = r*np.cos(theta), r*np.sin(theta)
-            xr, yr = transform(x0, y0, g["rotation"] + np.degrees(theta), x, y)
-            ax.plot(xr, yr, linewidth=2)
-
-    # Optional secondary motif.
-    if g["extra_probability"] > 0.20:
-        small = g["scale"] * (0.25 + 0.55*g["extra_probability"])
-        xs, ys = motif_points("Геометриялық", small)
-        m = max(3, int(n*g["extra_probability"]))
+            th=2*np.pi*i/n; rr=r*(.62+.25*g["density"])
+            draw_one(ax,name,rr*np.cos(th),rr*np.sin(th),g["rotation"]+np.degrees(th),s*.64,g["curvature"])
+    elif lay=="Центральная":
+        m=max(4,n//2)
         for i in range(m):
-            theta = 2*np.pi*i/m
-            r = max(0.35, g["radius"]*0.45)
-            xr, yr = transform(xs, ys, g["rotation"]-np.degrees(theta),
-                               r*np.cos(theta), r*np.sin(theta))
-            ax.plot(xr, yr, linewidth=1.2)
-
-    lim = g["radius"] + 2.2
-    ax.set_xlim(-lim, lim)
-    ax.set_ylim(-lim, lim)
-    ax.set_aspect("equal")
-    ax.axis("off")
-    if title:
-        ax.set_title(title)
+            th=2*np.pi*i/m; rr=r*.72
+            draw_one(ax,name,rr*np.cos(th),rr*np.sin(th),g["rotation"]+np.degrees(th),s*.62,g["curvature"])
+        draw_one(ax,name,0,0,g["rotation"],s,g["curvature"])
+    else:
+        side=max(2,min(5,int(round(math.sqrt(n)))))
+        for iy,y in enumerate(np.linspace(-r*.7,r*.7,side)):
+            for ix,x in enumerate(np.linspace(-r*.7,r*.7,side)):
+                draw_one(ax,name,x,y,g["rotation"]+(ix+iy)*45,s*.46,g["curvature"],(ix+iy)%2==1,1.4)
+    lim=r+1.6; ax.set(xlim=(-lim,lim),ylim=(-lim,lim)); ax.set_aspect("equal"); ax.axis("off")
+    if title: ax.set_title(title)
     return fig
 
-# -----------------------------
-# UI
-# -----------------------------
-st.title("🧬 ORNAMENTAL GENOME AI")
-st.caption("Эволюционная генерация новых орнаментальных композиций с элементами искусственного интеллекта")
+def scores(g):
+    g=repair(g)
+    sym=.95 if (g["symmetry"] in [2,3] and g["repeats"]%2==0) else .78
+    fill=(g["repeats"]*g["scale"]*g["density"])/(12*.85)
+    comp=float(np.exp(-1.2*abs(fill-1))*np.exp(-.4*abs(g["spacing"]-1.05)))
+    tradition=float(np.exp(-.9*abs(g["curvature"]-1))*np.exp(-.5*max(0,g["scale"]-1.3)))
+    novelty=clamp(.55*min(abs(g["curvature"]-1)/.55,1)+.25*min((g["rotation"]%90)/45,1)+.2*g["secondary"],0,1)
+    crowd=(g["scale"]*g["density"]*g["repeats"])/max(g["spacing"],.3)
+    clean=clamp(1-max(0,crowd-9)/18,0,1)
+    return dict(symmetry=sym,composition=comp,tradition=tradition,novelty=novelty,clean=clean)
 
-if "labels" not in st.session_state:
-    st.session_state.labels = []
-if "gallery" not in st.session_state:
-    st.session_state.gallery = []
+def feat(g): return np.array([g[k] for k in GENES],float)
+
+if "labels" not in st.session_state: st.session_state.labels=[]
+if "trainset" not in st.session_state: st.session_state.trainset=[]
+
+def train_model():
+    if len(st.session_state.labels)<8: return None
+    X=np.vstack([feat(x["g"]) for x in st.session_state.labels]); y=np.array([x["target"] for x in st.session_state.labels])
+    if np.std(y)<.02: return None
+    m=RandomForestRegressor(n_estimators=180,random_state=42)
+    m.fit(X,y); return m
+
+model=train_model()
 
 with st.sidebar:
-    st.header("Параметры эксперимента")
-    pop_size = st.slider("Размер популяции", 20, 200, 60, 10)
-    generations = st.slider("Количество поколений", 5, 120, 35, 5)
-    mutation_rate = st.slider("Вероятность мутации", 0.01, 0.50, 0.12, 0.01)
-    ai_weight = st.slider("Вес ИИ-оценки", 0.0, 0.60, 0.25, 0.05)
+    st.header("⚙️ Эксперимент")
+    cat=st.selectbox("Категория",list(CATEGORIES))
+    motif=st.selectbox("Мотив",CATEGORIES[cat])
+    pop=st.slider("Популяция",20,140,60,10)
+    gens=st.slider("Поколения",5,80,35,5)
+    mut=st.slider("Мутация",.01,.35,.10,.01)
+    aiw=st.slider("Вес AI‑эксперта",0.,.6,.25,.05)
 
-    st.subheader("Веса функции fitness")
-    wS = st.slider("Симметрия", 0.0, 1.0, 0.30, 0.05)
-    wD = st.slider("Разнообразие", 0.0, 1.0, 0.15, 0.05)
-    wC = st.slider("Композиция", 0.0, 1.0, 0.25, 0.05)
-    wP = st.slider("Отсутствие пересечений", 0.0, 1.0, 0.20, 0.05)
-    wR = st.slider("Ограничения", 0.0, 1.0, 0.10, 0.05)
+weights={"symmetry":.20,"composition":.25,"tradition":.30,"novelty":.15,"clean":.10}
 
-weights_raw = np.array([wS,wD,wC,wP,wR], dtype=float)
-if weights_raw.sum() == 0:
-    weights_raw[0] = 1
-weights_raw /= weights_raw.sum()
-weights = dict(zip(
-    ["symmetry","diversity","composition","non_intersection","constraints"],
-    weights_raw
-))
-
-tabs = st.tabs(["🚀 Эволюция", "🎨 Ручной геном", "🤖 Обучение ИИ", "📊 Исследование", "📚 О проекте"])
-
-# TAB 1
-with tabs[0]:
-    ai_model = train_ai_if_possible()
-    st.write("Нажмите кнопку, чтобы создать популяцию и провести эволюционный поиск.")
-    if ai_model is None:
-        st.info("ИИ-модель пока не обучена: используется математическая многокритериальная оценка. После 6+ пользовательских оценок включится обучаемый модуль Random Forest.")
-
-    if st.button("Запустить эволюцию", type="primary"):
-        t0 = time.time()
-        best, history, snapshots, final_pop, final_scores = evolve(
-            pop_size, generations, mutation_rate, weights, ai_model, ai_weight
-        )
-        elapsed = time.time() - t0
-        st.session_state.last_run = {
-            "best": best, "history": history, "snapshots": snapshots,
-            "final_pop": final_pop, "final_scores": final_scores,
-            "elapsed": elapsed
-        }
-
-    if "last_run" in st.session_state:
-        run = st.session_state.last_run
-        best = run["best"]
-        score, m, a = fitness(best, weights, train_ai_if_possible(), ai_weight)
-
-        c1, c2 = st.columns([1.15, 1])
-        with c1:
-            fig = draw_ornament(best, title=f"Лучшая композиция | Fitness={score:.3f}")
-            st.pyplot(fig, use_container_width=True)
-            plt.close(fig)
-        with c2:
-            st.subheader("Орнаментальный геном")
-            table = pd.DataFrame({
-                "Ген": GENE_NAMES,
-                "Значение": [
-                    MOTIFS[best["motif"]], round(best["scale"],3), round(best["rotation"],1),
-                    best["repeats"], round(best["spacing"],3), SYMMETRIES[best["symmetry"]],
-                    round(best["radius"],3), round(best["density"],3), round(best["extra_probability"],3)
-                ]
-            })
-            st.dataframe(table, use_container_width=True, hide_index=True)
-            st.metric("Время эксперимента", f"{run['elapsed']:.2f} сек")
-            if a is not None:
-                st.metric("Прогноз ИИ", f"{a:.3f}")
-
-        st.subheader("Динамика эволюции")
-        h = pd.DataFrame(run["history"]).set_index("generation")
-        st.line_chart(h[["best","mean","min"]])
-
-        st.subheader("Поколения: как менялась композиция")
-        cols = st.columns(len(run["snapshots"]))
-        for col, (gen, genome, sc) in zip(cols, run["snapshots"]):
-            with col:
-                fig = draw_ornament(genome, title=f"Поколение {gen}\n{sc:.3f}")
-                st.pyplot(fig, use_container_width=True)
-                plt.close(fig)
-
-        st.subheader("Дать экспертную оценку лучшей композиции")
-        rating = st.slider("Оценка от 1 до 5", 1, 5, 4, key="best_rating")
-        if st.button("Добавить оценку для обучения ИИ"):
-            st.session_state.labels.append({"genome": dict(best), "rating": rating})
-            st.success(f"Оценка сохранена. Всего примеров для обучения: {len(st.session_state.labels)}")
-
-# TAB 2
-with tabs[1]:
-    st.subheader("Конструктор одного орнаментального генома")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        motif = st.selectbox("Базовый мотив", MOTIFS)
-        scale = st.slider("Масштаб", 0.25, 1.60, 0.8, 0.05)
-        rotation = st.slider("Угол поворота", 0, 359, 0)
-    with col2:
-        repeats = st.slider("Количество повторов", 3, 24, 8)
-        spacing = st.slider("Шаг / интервал", 0.35, 2.4, 1.1, 0.05)
-        symmetry = st.selectbox("Тип симметрии", SYMMETRIES)
-    with col3:
-        radius = st.slider("Радиус размещения", 0.8, 5.0, 2.5, 0.1)
-        density = st.slider("Плотность", 0.2, 1.0, 0.75, 0.05)
-        extra = st.slider("Дополнительный элемент", 0.0, 0.9, 0.25, 0.05)
-
-    g = {
-        "motif": MOTIFS.index(motif), "scale": scale, "rotation": rotation,
-        "repeats": repeats, "spacing": spacing, "symmetry": SYMMETRIES.index(symmetry),
-        "radius": radius, "density": density, "extra_probability": extra
-    }
-    sc, mm, aa = fitness(g, weights, train_ai_if_possible(), ai_weight)
-    fig = draw_ornament(g, title=f"Fitness = {sc:.3f}")
-    st.pyplot(fig, use_container_width=True)
-    plt.close(fig)
-    st.dataframe(pd.DataFrame([mm]), use_container_width=True)
-
-# TAB 3
-with tabs[2]:
-    st.subheader("Обучаемый модуль ИИ на основе экспертной обратной связи")
-    st.write(
-        "Идея: пользователь оценивает созданные композиции по шкале 1–5. "
-        "После накопления минимум 6 размеченных примеров Random Forest обучается "
-        "предсказывать экспертную оценку по параметрам орнаментального генома."
-    )
-    st.metric("Размеченных примеров", len(st.session_state.labels))
-
-    if st.button("Сгенерировать 6 вариантов для разметки"):
-        st.session_state.gallery = [random_genome() for _ in range(6)]
-
-    if st.session_state.gallery:
-        cols = st.columns(3)
-        for i, g in enumerate(st.session_state.gallery):
-            with cols[i % 3]:
-                fig = draw_ornament(g, title=f"Вариант {i+1}")
-                st.pyplot(fig, use_container_width=True)
-                plt.close(fig)
-                r = st.slider("Оценка", 1, 5, 3, key=f"gallery_{i}")
-                if st.button("Сохранить", key=f"save_{i}"):
-                    st.session_state.labels.append({"genome": dict(g), "rating": r})
-                    st.success("Сохранено")
-
-    model = train_ai_if_possible()
+def fitness(g):
+    ms=scores(g); base=sum(weights[k]*ms[k] for k in weights); ai=None
     if model is not None:
-        st.success("ИИ-модель обучена и может участвовать в fitness-функции.")
-        importance = pd.DataFrame({
-            "Ген": GENE_NAMES,
-            "Важность": model.feature_importances_
-        }).sort_values("Важность", ascending=False)
-        st.bar_chart(importance.set_index("Ген"))
-    else:
-        st.warning("Для обучения требуется минимум 6 оценённых вариантов и хотя бы две разные оценки.")
+        ai=float(clamp(model.predict(feat(g).reshape(1,-1))[0],0,1))
+        base=(1-aiw)*base+aiw*ai
+    return float(base),ms,ai
 
-# TAB 4
-with tabs[3]:
-    st.subheader("Сравнение случайной и эволюционной генерации")
-    st.write("Этот раздел предназначен для получения фактических данных для главы 4 научной работы.")
-    if st.button("Провести сравнительный эксперимент"):
-        ai_model = train_ai_if_possible()
-        random_pop = [random_genome() for _ in range(pop_size)]
-        random_scores = [fitness(g, weights, ai_model, ai_weight)[0] for g in random_pop]
-        best, history, snapshots, pop, scores = evolve(
-            pop_size, generations, mutation_rate, weights, ai_model, ai_weight
-        )
-        results = pd.DataFrame({
-            "Метод": ["Случайная генерация", "Эволюционная генерация"],
-            "Средний fitness": [np.mean(random_scores), np.mean(scores)],
-            "Лучший fitness": [np.max(random_scores), np.max(scores)],
-            "Поколений": [0, generations],
-            "Размер популяции": [pop_size, pop_size]
-        })
-        st.dataframe(results, use_container_width=True, hide_index=True)
-        st.bar_chart(results.set_index("Метод")[["Средний fitness","Лучший fitness"]])
+def cross(a,b):
+    c={}
+    for k in GENES:
+        if k in ["motif","repeats","symmetry","layout"]: c[k]=a[k] if random.random()<.5 else b[k]
+        else:
+            q=random.random(); c[k]=q*a[k]+(1-q)*b[k]
+    return repair(c)
 
-        csv = results.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("Скачать таблицу CSV", csv, "experiment_results.csv", "text/csv")
+def mutate(g,p):
+    g=dict(g)
+    for k in GENES:
+        if k=="motif": continue
+        if random.random()<p:
+            if k=="repeats": g[k]+=random.choice([-2,-1,1,2])
+            elif k=="symmetry": g[k]=random.randrange(4)
+            elif k=="layout": g[k]=random.randrange(4)
+            elif k=="rotation": g[k]+=random.uniform(-40,40)
+            else: g[k]+=random.uniform(-.2,.2)
+    return repair(g)
 
-# TAB 5
-with tabs[4]:
+def evolve():
+    P=[genome(motif) for _ in range(pop)]; hist=[]; snaps=[]
+    for gen in range(gens+1):
+        sc=np.array([fitness(g)[0] for g in P]); order=np.argsort(sc)[::-1]
+        hist.append([gen,float(sc.max()),float(sc.mean())])
+        if gen in sorted(set([0,gens//2,gens])): snaps.append((gen,dict(P[order[0]]),float(sc.max())))
+        if gen==gens: break
+        new=[dict(P[i]) for i in order[:max(2,pop//10)]]
+        while len(new)<pop:
+            ids=random.sample(range(pop),min(3,pop)); p1=P[max(ids,key=lambda i:sc[i])]
+            ids=random.sample(range(pop),min(3,pop)); p2=P[max(ids,key=lambda i:sc[i])]
+            new.append(mutate(cross(p1,p2),mut))
+        P=new[:pop]
+    sc=[fitness(g)[0] for g in P]; i=int(np.argmax(sc))
+    return P[i],pd.DataFrame(hist,columns=["generation","best","mean"]),snaps,P,sc
+
+tabs=st.tabs(["🎨 Студия","🧬 Эволюция","🤖 Обучение ИИ","📊 Исследование","📚 О проекте"])
+
+with tabs[0]:
+    st.header("Студия")
+    st.write("Теперь используются 13 отдельных параметрических мотивов, а не три условные фигуры.")
+    c1,c2,c3=st.columns(3)
+    with c1:
+        m=st.selectbox("Мотив",MOTIFS,index=MOTIFS.index(motif),key="s_m")
+        scale=st.slider("Масштаб",.35,1.55,.8,.05)
+        curve=st.slider("Изгиб / пластика",.35,1.65,1.,.05)
+    with c2:
+        rep=st.slider("Повторы",3,24,8)
+        rotv=st.slider("Поворот",0,359,0)
+        dens=st.slider("Плотность",.25,1.,.7,.05)
+    with c3:
+        lay=st.selectbox("Композиция",LAYOUTS,index=1)
+        sym=st.selectbox("Симметрия",SYMS,index=3)
+        rad=st.slider("Радиус",1.,5.,2.8,.1)
+    g=genome(m); g.update(scale=scale,curvature=curve,repeats=rep,rotation=rotv,density=dens,layout=LAYOUTS.index(lay),symmetry=SYMS.index(sym),radius=rad)
+    sc,ms,ai=fitness(g)
+    a,b=st.columns([1.2,1])
+    with a:
+        fig=draw(g,f"{m} • {lay} • Fitness {sc:.3f}"); st.pyplot(fig,use_container_width=True); plt.close(fig)
+    with b:
+        st.dataframe(pd.DataFrame({"Критерий":list(ms),"Оценка":list(ms.values())}),hide_index=True,use_container_width=True)
+        if ai is None: st.info("AI‑эксперт пока не обучен.")
+        else: st.metric("AI‑эксперт",f"{ai*100:.1f}%")
+
+with tabs[1]:
+    st.header("Эволюция")
+    if st.button("🚀 Запустить эволюцию",type="primary"):
+        t=time.time(); best,hist,snaps,P,sc=evolve()
+        st.session_state.run=(best,hist,snaps,P,sc,time.time()-t)
+    if "run" in st.session_state:
+        best,hist,snaps,P,sc,elapsed=st.session_state.run
+        a,b=st.columns([1.2,1])
+        with a:
+            fig=draw(best,f"Победитель • Fitness {fitness(best)[0]:.3f}"); st.pyplot(fig,use_container_width=True); plt.close(fig)
+        with b:
+            st.metric("Время",f"{elapsed:.2f} сек")
+            st.dataframe(pd.DataFrame({"Ген":GENES,"Значение":[best[k] for k in GENES]}),hide_index=True,use_container_width=True)
+        st.subheader("Поколения")
+        cols=st.columns(len(snaps))
+        for c,(gn,gg,ss) in zip(cols,snaps):
+            with c:
+                fig=draw(gg,f"Поколение {gn}\n{ss:.3f}"); st.pyplot(fig,use_container_width=True); plt.close(fig)
+        st.line_chart(hist.set_index("generation")[["best","mean"]])
+
+with tabs[2]:
+    st.header("Как обучается ИИ")
     st.markdown("""
-### Научная логика приложения
-
-**1. Геном.** Каждая композиция кодируется девятью параметрами:
-тип мотива, масштаб, угол, число повторов, интервал, тип симметрии,
-радиус, плотность и вероятность дополнительного элемента.
-
-**2. Генетический алгоритм.** Создаётся популяция вариантов. Для каждого
-варианта вычисляется fitness. Затем применяются турнирный отбор,
-равномерно-арифметическое скрещивание, мутация и элитизм.
-
-**3. Многокритериальная функция.**
-`F = w1·S + w2·D + w3·C + w4·P + w5·R`
-
-где S — симметрия, D — разнообразие, C — композиционная заполненность,
-P — отсутствие нежелательной перегруженности/пересечений, R — соблюдение
-ограничений.
-
-**4. Реальный элемент машинного обучения.** После экспертной разметки
-композиций обучается `RandomForestRegressor`, который прогнозирует
-человеческую оценку и может включаться в функцию fitness.
-
-**5. Исследовательский результат.** Приложение позволяет получать
-таблицы, графики, промежуточные поколения и сравнение случайного поиска
-с эволюционным. Это делает программу не просто генератором картинок,
-а инструментом вычислительного эксперимента.
+**1.** Сайт генерирует примеры → **2.** человек оценивает их →
+**3.** формируется таблица «11 генов → экспертная оценка» →
+**4.** обучается `RandomForestRegressor` →
+**5.** прогноз модели добавляется к Fitness следующего поколения.
 """)
+    st.metric("Размеченных примеров",len(st.session_state.labels))
+    if model is None: st.warning("Нужно минимум 8 разнообразно оценённых вариантов.")
+    else: st.success("AI‑эксперт обучен и участвует в Fitness.")
+    if st.button("Создать 8 вариантов для разметки"):
+        st.session_state.trainset=[genome(motif) for _ in range(8)]
+    for i,gc in enumerate(st.session_state.trainset):
+        with st.expander(f"Вариант {i+1}",expanded=i==0):
+            l,r=st.columns([1,1])
+            with l:
+                fig=draw(gc); st.pyplot(fig,use_container_width=True); plt.close(fig)
+            with r:
+                s=st.slider("Сохранение характера мотива",1,5,3,key=f"q_s{i}")
+                h=st.slider("Гармония",1,5,3,key=f"q_h{i}")
+                o=st.slider("Оригинальность",1,5,3,key=f"q_o{i}")
+                if st.button("Сохранить оценку",key=f"q_b{i}"):
+                    target=(.45*s+.35*h+.20*o)/5
+                    st.session_state.labels.append({"g":dict(gc),"target":target,"style":s,"harmony":h,"originality":o})
+                    st.success("Добавлено.")
+    if st.session_state.labels:
+        rows=[]
+        for x in st.session_state.labels:
+            row={k:x["g"][k] for k in GENES}; row.update(target=x["target"],style=x["style"],harmony=x["harmony"],originality=x["originality"]); rows.append(row)
+        df=pd.DataFrame(rows); st.dataframe(df,use_container_width=True)
+        st.download_button("Скачать обучающую выборку CSV",df.to_csv(index=False).encode("utf-8-sig"),"ornamental_ai_training.csv","text/csv")
+
+with tabs[3]:
+    st.header("Сравнение случайной и эволюционной генерации")
+    if st.button("🧪 Провести эксперимент"):
+        R=[genome(motif) for _ in range(pop)]; rs=[fitness(g)[0] for g in R]
+        best,hist,snaps,P,es=evolve()
+        res=pd.DataFrame({
+            "Метод":["Случайная","Эволюционная"],
+            "Средний Fitness":[np.mean(rs),np.mean(es)],
+            "Лучший Fitness":[np.max(rs),np.max(es)],
+            "Популяция":[pop,pop],"Поколения":[0,gens],"Мотив":[motif,motif]
+        })
+        st.session_state.res=res
+    if "res" in st.session_state:
+        st.dataframe(st.session_state.res,hide_index=True,use_container_width=True)
+        st.bar_chart(st.session_state.res.set_index("Метод")[["Средний Fitness","Лучший Fitness"]])
+        st.download_button("Скачать результаты CSV",st.session_state.res.to_csv(index=False).encode("utf-8-sig"),"experiment_results.csv","text/csv")
+
+with tabs[4]:
+    st.header("Научная логика")
+    st.write("""
+**Библиотека:** 13 мотивов в 4 категориях.  
+**Геном:** 11 параметров.  
+**Эволюция:** отбор, скрещивание, мутация, элитизм.  
+**ИИ:** Random Forest обучается на экспертной разметке пользователя.  
+**Честное ограничение:** контуры являются авторскими стилизованными параметрическими моделями для вычислительного эксперимента, а не точными музейными копиями.
+""")
+    table=[]
+    for c,ms in CATEGORIES.items():
+        for m in ms: table.append({"Категория":c,"Мотив":m})
+    st.dataframe(pd.DataFrame(table),hide_index=True,use_container_width=True)
