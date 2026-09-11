@@ -1,328 +1,294 @@
-
 import streamlit as st
-import numpy as np, pandas as pd, matplotlib.pyplot as plt
+import sqlite3, hashlib, json, math, random, io
+from pathlib import Path
+import pandas as pd
+import numpy as np
+from PIL import Image, ImageDraw
 from sklearn.ensemble import RandomForestRegressor
-import random, math, time
 
-st.set_page_config(page_title="ORNAMENTAL GENOME AI 2.0", page_icon="🧬", layout="wide")
+APP_DIR = Path(__file__).parent
+DB_PATH = APP_DIR / 'ornamental_genome.db'
 
-st.markdown("""
+st.set_page_config(page_title='ORNAMENTAL GENOME — AI ETHNO DESIGN LAB', page_icon='🧬', layout='wide')
+
+st.markdown('''
 <style>
-.block-container{max-width:1280px;padding-top:1.3rem}
-.hero{padding:24px;border-radius:20px;border:1px solid #ddd;margin-bottom:18px}
-.hero h1{margin:0 0 8px 0}
-.badge{display:inline-block;border:1px solid #ccc;border-radius:999px;padding:4px 9px;margin-right:5px}
+:root {--gold:#f4c95d;--pink:#ff5c8a;--cyan:#62e6e6;--card:#171a22;--muted:#aeb7c7;}
+.stApp{background:radial-gradient(circle at 10% 10%,rgba(98,230,230,.08),transparent 28%),radial-gradient(circle at 90% 5%,rgba(255,92,138,.08),transparent 32%),linear-gradient(180deg,#0b0d12 0%,#11151d 100%);color:#f4f7fb}
+.block-container{padding-top:1.2rem;padding-bottom:3rem;max-width:1450px}
+.og-hero{border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:34px 36px;background:linear-gradient(135deg,rgba(244,201,93,.12),rgba(255,92,138,.08),rgba(98,230,230,.08));box-shadow:0 20px 60px rgba(0,0,0,.25);margin-bottom:18px}
+.og-kicker{font-size:.8rem;font-weight:800;letter-spacing:.18em;color:#f4c95d}.og-title{font-size:2.6rem;font-weight:900;line-height:1.05;margin:.25rem 0}.og-sub{color:#c6ceda;font-size:1.02rem;max-width:900px}
+.og-card{background:rgba(23,26,34,.93);border:1px solid rgba(255,255,255,.08);border-radius:22px;padding:18px}.og-pill{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(244,201,93,.13);color:#f4c95d;font-size:.78rem;font-weight:700;margin:2px 4px 2px 0}.og-small{color:#aeb7c7;font-size:.88rem}
+div[data-testid='stButton'] button,div[data-testid='stDownloadButton'] button{border-radius:14px;font-weight:800}
 </style>
-<div class="hero">
-<h1>🧬 ORNAMENTAL GENOME AI 2.0</h1>
-<p>Эволюционная лаборатория генеративного дизайна казахского орнамента</p>
-<span class="badge">Creative Industry</span>
-<span class="badge">Genetic Algorithm</span>
-<span class="badge">Machine Learning</span>
-</div>
-""", unsafe_allow_html=True)
+''', unsafe_allow_html=True)
 
-CATEGORIES = {
-    "Зооморфные":["Қошқар мүйіз","Қос мүйіз","Түйетабан","Құстаңдай","Қазмойын"],
-    "Растительные":["Гүл","Жапырақ"],
-    "Геометрические":["Тұмарша","Ирек"],
-    "Космогонические":["Жұлдыз","Шұғыла","Төртқұлақ","Бітпес"]
-}
-MOTIFS=[m for v in CATEGORIES.values() for m in v]
-SYMS=["Линейная","Зеркальная","Центральная","Радиальная"]
-LAYOUTS=["Бордюр","Розетка","Центральная","Сетчатая"]
-GENES=["motif","scale","rotation","repeats","spacing","symmetry","radius","density","curvature","secondary","layout"]
+# ---------- database ----------
+def db():
+    con=sqlite3.connect(DB_PATH,check_same_thread=False); con.row_factory=sqlite3.Row; return con
 
-def clamp(x,a,b): return max(a,min(b,x))
-def rot(x,y,a):
-    a=np.deg2rad(a); return x*np.cos(a)-y*np.sin(a), x*np.sin(a)+y*np.cos(a)
+def init_db():
+    con=db(); cur=con.cursor()
+    cur.execute('CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE NOT NULL,display_name TEXT NOT NULL,password_hash TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP)')
+    cur.execute('CREATE TABLE IF NOT EXISTS ratings(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,genome_json TEXT NOT NULL,liked INTEGER NOT NULL DEFAULT 0,rating REAL,created_at TEXT DEFAULT CURRENT_TIMESTAMP)')
+    cur.execute('CREATE TABLE IF NOT EXISTS designs(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,name TEXT NOT NULL,motif TEXT NOT NULL,genome_json TEXT NOT NULL,svg TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP)')
+    con.commit(); con.close()
+init_db()
 
-def genome(motif=None):
-    return dict(
-        motif=MOTIFS.index(motif) if motif in MOTIFS else random.randrange(len(MOTIFS)),
-        scale=random.uniform(.55,1.25), rotation=random.uniform(0,360),
-        repeats=random.randint(4,18), spacing=random.uniform(.65,1.6),
-        symmetry=random.randrange(4), radius=random.uniform(1.5,4),
-        density=random.uniform(.45,.95), curvature=random.uniform(.6,1.35),
-        secondary=random.uniform(0,.6), layout=random.randrange(4)
-    )
+def phash(p): return hashlib.sha256(('OG::'+p).encode()).hexdigest()
+def register_user(u,d,p):
+    u=u.strip().lower()
+    if len(u)<3 or len(p)<4:return False,'Логин — минимум 3 символа, пароль — минимум 4.'
+    try:
+        con=db(); con.execute('INSERT INTO users(username,display_name,password_hash) VALUES(?,?,?)',(u,d.strip() or u,phash(p))); con.commit(); con.close(); return True,'Аккаунт создан.'
+    except sqlite3.IntegrityError:return False,'Такой логин уже существует.'
+def login_user(u,p):
+    con=db(); row=con.execute('SELECT * FROM users WHERE username=? AND password_hash=?',(u.strip().lower(),phash(p))).fetchone(); con.close(); return dict(row) if row else None
+def save_rating(uid,g,liked,rating=None):
+    con=db(); con.execute('INSERT INTO ratings(user_id,genome_json,liked,rating) VALUES(?,?,?,?)',(uid,json.dumps(g,ensure_ascii=False),int(liked),rating)); con.commit(); con.close()
+def get_ratings(uid):
+    con=db(); rows=con.execute('SELECT * FROM ratings WHERE user_id=? ORDER BY id',(uid,)).fetchall(); con.close(); return [dict(r) for r in rows]
+def save_design(uid,name,motif,g,svg):
+    con=db(); con.execute('INSERT INTO designs(user_id,name,motif,genome_json,svg) VALUES(?,?,?,?,?)',(uid,name,motif,json.dumps(g,ensure_ascii=False),svg)); con.commit(); con.close()
+def get_designs(uid):
+    con=db(); rows=con.execute('SELECT * FROM designs WHERE user_id=? ORDER BY id DESC',(uid,)).fetchall(); con.close(); return [dict(r) for r in rows]
 
-def repair(g):
-    g=dict(g)
-    g["motif"]=int(clamp(round(g["motif"]),0,len(MOTIFS)-1))
-    g["scale"]=clamp(float(g["scale"]),.35,1.55)
-    g["rotation"]=float(g["rotation"])%360
-    g["repeats"]=int(clamp(round(g["repeats"]),3,24))
-    g["spacing"]=clamp(float(g["spacing"]),.45,2.1)
-    g["symmetry"]=int(clamp(round(g["symmetry"]),0,3))
-    g["radius"]=clamp(float(g["radius"]),1,5)
-    g["density"]=clamp(float(g["density"]),.25,1)
-    g["curvature"]=clamp(float(g["curvature"]),.35,1.65)
-    g["secondary"]=clamp(float(g["secondary"]),0,.9)
-    g["layout"]=int(clamp(round(g["layout"]),0,3))
-    return g
+MOTIFS={
+'Қошқар мүйіз':{'category':'Зооморфный','note':'Стилизованный мотив рогов. В прототипе используется авторская параметрическая векторизация.'},
+'Қос мүйіз':{'category':'Зооморфный','note':'Парная композиция рогов; удобна для зеркальной симметрии.'},
+'Тұмарша':{'category':'Геометрический','note':'Треугольная композиционная основа; в прототипе — геометрическая интерпретация.'},
+'Ирек':{'category':'Геометрический','note':'Ломаный/волнообразный ритм, удобный для бордюрных паттернов.'},
+'Жұлдыз':{'category':'Космогонический','note':'Звёздчатая геометрическая структура.'}}
+PRODUCTS=['Постер','Упаковка','Шоппер','Обложка','Соцсети','Фирменный паттерн']
+STYLES=['Balanced Ethno','Minimal Ethno','Bold Graphic','Editorial','Festival']
+LAYOUTS=['Бордюр','Розетка','Сетка','Центральная']
+PALETTES={'Heritage Gold':['#0B1B2B','#F4C95D','#E9E2D0'],'Steppe':['#2E4B3F','#C7A46A','#F2E9D7'],'Modern Red':['#201A1A','#D94B4B','#F4EDE3'],'Sky':['#103D5A','#5CC8D7','#F1D8A5'],'Monochrome':['#111111','#F4F4F4','#8C8C8C']}
 
-def motif_paths(name,s=1,c=1):
-    p=[]
-    if name=="Қошқар мүйіз":
-        t=np.linspace(0,2.3*np.pi,150); r=s*(.04+.105*t*c)
-        x=r*np.cos(t); y=r*np.sin(t); p=[(x,y),(-x,y)]
-    elif name=="Қос мүйіз":
-        t=np.linspace(0,2*np.pi,130); r=s*(.04+.09*t*c)
-        x=r*np.cos(t); y=r*np.sin(t); p=[(x-.25*s,y),(-x+.25*s,y)]
-    elif name=="Түйетабан":
-        x=np.array([-.65,-.25,0,.25,.65,.35,0,-.35,-.65])*s
-        y=np.array([0,.45,.18,.45,0,-.4,-.12,-.4,0])*s; p=[(x,y)]
-    elif name=="Құстаңдай":
-        x=np.array([-.8,-.25,0,.25,.8,.35,0,-.35,-.8])*s
-        y=np.array([0,.2,.65,.2,0,-.18,-.5,-.18,0])*s; p=[(x,y)]
-    elif name=="Қазмойын":
-        t=np.linspace(-np.pi/2,1.3*np.pi,130)
-        p=[(.45*s*np.cos(t)+.18*s*np.sin(2*t)*c,.62*s*np.sin(t))]
-    elif name=="Гүл":
-        t=np.linspace(0,2*np.pi,220); r=s*(.48+.22*np.cos(6*t)); p=[(r*np.cos(t),r*np.sin(t))]
-    elif name=="Жапырақ":
-        t=np.linspace(0,np.pi,120); x=s*np.cos(t); y=.48*s*np.sin(t)
-        p=[(x,y),(x,-y),(np.array([-s,s]),np.array([0,0]))]
-    elif name=="Тұмарша":
-        p=[(np.array([0,.72,-.72,0])*s,np.array([.78,-.58,-.58,.78])*s),
-           (np.array([0,.28,-.28,0])*s,np.array([.28,-.22,-.22,.28])*s)]
-    elif name=="Ирек":
-        x=np.linspace(-1,1,160)*s; y=.32*s*np.sin(3*np.pi*x/max(s,.01)); p=[(x,y)]
-    elif name=="Жұлдыз":
+def random_genome(motif,style,layout,palette):
+    bias={'Minimal Ethno':(.65,.45),'Balanced Ethno':(.85,.62),'Bold Graphic':(1,.78),'Editorial':(.78,.58),'Festival':(1.05,.82)}[style]
+    return {'motif':motif,'style':style,'layout':layout,'palette':palette,'scale':round(random.uniform(bias[0]*.78,bias[0]*1.18),3),'rotation':random.choice([0,15,30,45,60,90]),'repeats':random.randint(4,12),'spacing':round(random.uniform(.72,1.35),3),'density':round(min(1,max(.2,random.gauss(bias[1],.12))),3),'curve':round(random.uniform(.55,1),3),'stroke':round(random.uniform(2,5),2),'symmetry':random.choice([0,1,2]),'layout_idx':LAYOUTS.index(layout),'seed':random.randint(1,999999)}
+
+def feature_vector(g):
+    return [list(MOTIFS).index(g['motif']),STYLES.index(g['style']),list(PALETTES).index(g['palette']),g['scale'],g['rotation']/90,g['repeats']/12,g['spacing'],g['density'],g['curve'],g['stroke']/5,g['symmetry']/2,g['layout_idx']/3]
+
+def personal_model(uid):
+    rows=get_ratings(uid);X=[];y=[]
+    for r in rows:
+        g=json.loads(r['genome_json']); X.append(feature_vector(g)); y.append(float(r['rating']) if r['rating'] is not None else float(r['liked']))
+    if len(X)<8 or len(set(y))<2:return None,len(X)
+    m=RandomForestRegressor(n_estimators=160,random_state=42,max_depth=7);m.fit(np.array(X),np.array(y));return m,len(X)
+def ai_match(model,g): return None if model is None else float(np.clip(model.predict([feature_vector(g)])[0],0,1))
+def structure_score(g):
+    s_sym=[.65,.90,.94][g['symmetry']]; target={'Minimal Ethno':.45,'Balanced Ethno':.62,'Bold Graphic':.78,'Editorial':.58,'Festival':.82}[g['style']]; s_density=max(0,1-abs(g['density']-target)/.7);s_repeat=1-min(abs(g['repeats']-8)/10,1);s_clean=1-min(max(g['scale']*g['density']-.85,0),.5);return float(np.clip(.30*s_sym+.26*s_density+.22*s_repeat+.22*s_clean,0,1))
+def novelty_score(g): return float(np.clip(.25*(g['rotation']/90)+.25*abs(g['spacing']-1)+.25*abs(g['density']-.6)+.25*abs(g['curve']-.75),0,1))
+def total_score(g,model=None):
+    s=structure_score(g);n=novelty_score(g);p=ai_match(model,g);t=.78*s+.22*n if p is None else .62*s+.18*n+.20*p;return t,s,n,p
+
+def crossover(a,b):
+    c=dict(a)
+    for k in ['scale','rotation','repeats','spacing','density','curve','stroke','symmetry','layout_idx']:c[k]=a[k] if random.random()<.5 else b[k]
+    c['layout']=LAYOUTS[int(c['layout_idx'])];c['seed']=random.randint(1,999999);return c
+
+def mutate(g,rate=.18):
+    c=dict(g)
+    if random.random()<rate:c['scale']=round(float(np.clip(c['scale']+random.gauss(0,.08),.45,1.35)),3)
+    if random.random()<rate:c['rotation']=int(np.clip(c['rotation']+random.choice([-15,15,30]),0,90))
+    if random.random()<rate:c['repeats']=int(np.clip(c['repeats']+random.choice([-2,-1,1,2]),3,14))
+    if random.random()<rate:c['spacing']=round(float(np.clip(c['spacing']+random.gauss(0,.08),.62,1.5)),3)
+    if random.random()<rate:c['density']=round(float(np.clip(c['density']+random.gauss(0,.07),.2,1)),3)
+    if random.random()<rate:c['curve']=round(float(np.clip(c['curve']+random.gauss(0,.08),.4,1.2)),3)
+    if random.random()<rate:c['stroke']=round(float(np.clip(c['stroke']+random.gauss(0,.5),1.5,6)),2)
+    if random.random()<rate:c['symmetry']=random.choice([0,1,2])
+    return c
+
+def motif_svg(motif,stroke='#F4C95D',sw=4):
+    if motif=='Қошқар мүйіз': path='M 60 78 C 42 78,34 66,36 52 C 38 38,52 32,61 39 C 70 46,69 58,61 63 C 54 68,45 64,45 57 C 45 51,50 47,55 48 C 63 49,68 56,71 66 C 75 80,84 89,99 91'
+    elif motif=='Қос мүйіз': path='M60 76 C45 77 34 67 35 53 C36 39 48 33 59 40 C67 45 67 57 59 62 C50 67 43 62 44 55 M60 76 C75 77 86 67 85 53 C84 39 72 33 61 40 C53 45 53 57 61 62 C70 67 77 62 76 55'
+    elif motif=='Тұмарша': path='M60 22 L101 94 L19 94 Z M60 42 L82 81 L38 81 Z M60 58 L70 76 L50 76 Z'
+    elif motif=='Ирек': path='M10 70 L28 45 L46 70 L64 45 L82 70 L100 45 L112 61'
+    else:
         pts=[]
-        for i in range(16):
-            rr=s*(.85 if i%2==0 else .34); a=np.pi*i/8; pts.append((rr*np.cos(a),rr*np.sin(a)))
-        pts.append(pts[0]); p=[(np.array([q[0] for q in pts]),np.array([q[1] for q in pts]))]
-    elif name=="Шұғыла":
-        for i in range(12):
-            a=2*np.pi*i/12; p.append((np.array([.18,.9])*s*np.cos(a),np.array([.18,.9])*s*np.sin(a)))
-    elif name=="Төртқұлақ":
-        for a in [0,90,180,270]:
-            t=np.linspace(0,1.7*np.pi,90); r=s*(.05+.1*t)
-            x,y=rot(r*np.cos(t)+.22*s,r*np.sin(t),a); p.append((x,y))
-    else:
-        t=np.linspace(-1,1,180); x=s*t; y=.33*s*np.sin(2.5*np.pi*t); p=[(x,y),(x,-y)]
-    return p
-
-def draw_one(ax,name,x,y,a,s,c,mirror=False,lw=1.8):
-    for px,py in motif_paths(name,s,c):
-        if mirror: px=-px
-        xx,yy=rot(np.array(px),np.array(py),a)
-        ax.plot(xx+x,yy+y,linewidth=lw)
-
-def draw(g,title=None):
-    g=repair(g); fig,ax=plt.subplots(figsize=(6,6))
-    name=MOTIFS[g["motif"]]; n=g["repeats"]; r=g["radius"]; s=g["scale"]; lay=LAYOUTS[g["layout"]]
-    if lay=="Бордюр":
-        for i,x in enumerate(np.linspace(-r,r,n)):
-            draw_one(ax,name,x,0,g["rotation"]+(i%2)*180,s*.58,g["curvature"],i%2==1)
-    elif lay=="Розетка":
+        for i in range(10):
+            a=-math.pi/2+i*math.pi/5;r=42 if i%2==0 else 18;pts.append((60+r*math.cos(a),60+r*math.sin(a)))
+        path='M '+' L '.join(f'{x:.1f} {y:.1f}' for x,y in pts)+' Z'
+    return f'<g><path d="{path}" fill="none" stroke="{stroke}" stroke-width="{sw}" stroke-linecap="round" stroke-linejoin="round"/></g>'
+def transform_group(x,y,scale,rot,content): return f'<g transform="translate({x:.2f},{y:.2f}) rotate({rot:.2f}) scale({scale:.3f}) translate(-60,-60)">{content}</g>'
+def render_svg(g,width=760,height=460):
+    bg,main,accent=PALETTES[g['palette']];motif=motif_svg(g['motif'],main,g['stroke']);groups=[];n=max(3,int(g['repeats']));sc=max(.35,min(1.2,g['scale']));layout=g['layout']
+    if layout=='Бордюр':
+        y=height/2;gap=width/(n+1)
         for i in range(n):
-            th=2*np.pi*i/n; rr=r*(.62+.25*g["density"])
-            draw_one(ax,name,rr*np.cos(th),rr*np.sin(th),g["rotation"]+np.degrees(th),s*.64,g["curvature"])
-    elif lay=="Центральная":
-        m=max(4,n//2)
-        for i in range(m):
-            th=2*np.pi*i/m; rr=r*.72
-            draw_one(ax,name,rr*np.cos(th),rr*np.sin(th),g["rotation"]+np.degrees(th),s*.62,g["curvature"])
-        draw_one(ax,name,0,0,g["rotation"],s,g["curvature"])
+            x=gap*(i+1);rr=g['rotation']*((-1)**i if g['symmetry']==1 else 1);groups.append(transform_group(x-60,y-60,sc*.78,rr,motif))
+    elif layout=='Розетка':
+        R=min(width,height)*.27*g['spacing']
+        for i in range(n):
+            a=2*math.pi*i/n;x=width/2+R*math.cos(a)-60;y=height/2+R*math.sin(a)-60;groups.append(transform_group(x,y,sc*.72,math.degrees(a)+g['rotation'],motif))
+    elif layout=='Сетка':
+        cols=max(2,int(math.sqrt(n*1.6)));rows=max(2,math.ceil(n/cols));sx=width/(cols+1);sy=height/(rows+1);k=0
+        for r in range(rows):
+            for c in range(cols):
+                if k>=n:break
+                x=sx*(c+1)-60;y=sy*(r+1)-60;rot=g['rotation']+(180 if (g['symmetry']==1 and (r+c)%2) else 0);groups.append(transform_group(x,y,sc*.58,rot,motif));k+=1
     else:
-        side=max(2,min(5,int(round(math.sqrt(n)))))
-        for iy,y in enumerate(np.linspace(-r*.7,r*.7,side)):
-            for ix,x in enumerate(np.linspace(-r*.7,r*.7,side)):
-                draw_one(ax,name,x,y,g["rotation"]+(ix+iy)*45,s*.46,g["curvature"],(ix+iy)%2==1,1.4)
-    lim=r+1.6; ax.set(xlim=(-lim,lim),ylim=(-lim,lim)); ax.set_aspect("equal"); ax.axis("off")
-    if title: ax.set_title(title)
-    return fig
+        groups.append(transform_group(width/2-60,height/2-60,sc*1.75,g['rotation'],motif))
+        for i in range(min(n,8)):
+            a=2*math.pi*i/min(n,8);R=min(width,height)*.28;x=width/2+R*math.cos(a)-60;y=height/2+R*math.sin(a)-60;groups.append(transform_group(x,y,sc*.48,math.degrees(a)+g['rotation'],motif))
+    border=f'<rect x="20" y="20" width="{width-40}" height="{height-40}" rx="24" fill="none" stroke="{accent}" opacity=".22" stroke-width="2"/>'
+    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><rect width="100%" height="100%" rx="28" fill="{bg}"/>{border}{"".join(groups)}</svg>'
 
-def scores(g):
-    g=repair(g)
-    sym=.95 if (g["symmetry"] in [2,3] and g["repeats"]%2==0) else .78
-    fill=(g["repeats"]*g["scale"]*g["density"])/(12*.85)
-    comp=float(np.exp(-1.2*abs(fill-1))*np.exp(-.4*abs(g["spacing"]-1.05)))
-    tradition=float(np.exp(-.9*abs(g["curvature"]-1))*np.exp(-.5*max(0,g["scale"]-1.3)))
-    novelty=clamp(.55*min(abs(g["curvature"]-1)/.55,1)+.25*min((g["rotation"]%90)/45,1)+.2*g["secondary"],0,1)
-    crowd=(g["scale"]*g["density"]*g["repeats"])/max(g["spacing"],.3)
-    clean=clamp(1-max(0,crowd-9)/18,0,1)
-    return dict(symmetry=sym,composition=comp,tradition=tradition,novelty=novelty,clean=clean)
+def svg_to_png_fallback(g,width=1000,height=600):
+    bg,main,_=PALETTES[g['palette']];img=Image.new('RGB',(width,height),bg);d=ImageDraw.Draw(img);n=max(3,int(g['repeats']));w=max(2,int(g['stroke']))
+    if g['layout']=='Бордюр':
+        for i in range(n):
+            x=(i+1)*width/(n+1);y=height/2;r=28+24*g['scale'];d.arc((x-r,y-r,x+r,y+r),180,520,fill=main,width=w);d.line((x,y,x+r*.9,y+r*.65),fill=main,width=w)
+    elif g['layout']=='Розетка':
+        R=min(width,height)*.28
+        for i in range(n):
+            a=2*math.pi*i/n;x=width/2+R*math.cos(a);y=height/2+R*math.sin(a);r=24+20*g['scale'];d.arc((x-r,y-r,x+r,y+r),170,520,fill=main,width=w)
+    elif g['layout']=='Сетка':
+        cols=max(2,int(math.sqrt(n*1.6)));rows=max(2,math.ceil(n/cols))
+        for r0 in range(rows):
+            for c0 in range(cols):
+                x=(c0+1)*width/(cols+1);y=(r0+1)*height/(rows+1);r=20+16*g['scale'];d.arc((x-r,y-r,x+r,y+r),180,510,fill=main,width=w)
+    else:
+        r=min(width,height)*.22;cx,cy=width/2,height/2
+        for i in range(n):
+            a=2*math.pi*i/n;x=cx+r*math.cos(a);y=cy+r*math.sin(a);d.line((cx,cy,x,y),fill=main,width=w)
+    out=io.BytesIO();img.save(out,format='PNG');return out.getvalue()
 
-def feat(g): return np.array([g[k] for k in GENES],float)
+def design_card(g,model=None):
+    score,struct,nov,pm=total_score(g,model);st.components.v1.html(render_svg(g,540,310),height=325);c1,c2,c3=st.columns(3);c1.metric('Fitness',f'{score:.3f}');c2.metric('Structure',f'{struct:.2f}');c3.metric('AI Match','—' if pm is None else f'{pm*100:.0f}%');return score
 
-if "labels" not in st.session_state: st.session_state.labels=[]
-if "trainset" not in st.session_state: st.session_state.trainset=[]
+for k,v in {'user':None,'guest':False,'population':[],'generation':0,'selected':[],'final_genome':None}.items():
+    if k not in st.session_state:st.session_state[k]=v
 
-def train_model():
-    if len(st.session_state.labels)<8: return None
-    X=np.vstack([feat(x["g"]) for x in st.session_state.labels]); y=np.array([x["target"] for x in st.session_state.labels])
-    if np.std(y)<.02: return None
-    m=RandomForestRegressor(n_estimators=180,random_state=42)
-    m.fit(X,y); return m
-
-model=train_model()
-
-with st.sidebar:
-    st.header("⚙️ Эксперимент")
-    cat=st.selectbox("Категория",list(CATEGORIES))
-    motif=st.selectbox("Мотив",CATEGORIES[cat])
-    pop=st.slider("Популяция",20,140,60,10)
-    gens=st.slider("Поколения",5,80,35,5)
-    mut=st.slider("Мутация",.01,.35,.10,.01)
-    aiw=st.slider("Вес AI‑эксперта",0.,.6,.25,.05)
-
-weights={"symmetry":.20,"composition":.25,"tradition":.30,"novelty":.15,"clean":.10}
-
-def fitness(g):
-    ms=scores(g); base=sum(weights[k]*ms[k] for k in weights); ai=None
-    if model is not None:
-        ai=float(clamp(model.predict(feat(g).reshape(1,-1))[0],0,1))
-        base=(1-aiw)*base+aiw*ai
-    return float(base),ms,ai
-
-def cross(a,b):
-    c={}
-    for k in GENES:
-        if k in ["motif","repeats","symmetry","layout"]: c[k]=a[k] if random.random()<.5 else b[k]
-        else:
-            q=random.random(); c[k]=q*a[k]+(1-q)*b[k]
-    return repair(c)
-
-def mutate(g,p):
-    g=dict(g)
-    for k in GENES:
-        if k=="motif": continue
-        if random.random()<p:
-            if k=="repeats": g[k]+=random.choice([-2,-1,1,2])
-            elif k=="symmetry": g[k]=random.randrange(4)
-            elif k=="layout": g[k]=random.randrange(4)
-            elif k=="rotation": g[k]+=random.uniform(-40,40)
-            else: g[k]+=random.uniform(-.2,.2)
-    return repair(g)
-
-def evolve():
-    P=[genome(motif) for _ in range(pop)]; hist=[]; snaps=[]
-    for gen in range(gens+1):
-        sc=np.array([fitness(g)[0] for g in P]); order=np.argsort(sc)[::-1]
-        hist.append([gen,float(sc.max()),float(sc.mean())])
-        if gen in sorted(set([0,gens//2,gens])): snaps.append((gen,dict(P[order[0]]),float(sc.max())))
-        if gen==gens: break
-        new=[dict(P[i]) for i in order[:max(2,pop//10)]]
-        while len(new)<pop:
-            ids=random.sample(range(pop),min(3,pop)); p1=P[max(ids,key=lambda i:sc[i])]
-            ids=random.sample(range(pop),min(3,pop)); p2=P[max(ids,key=lambda i:sc[i])]
-            new.append(mutate(cross(p1,p2),mut))
-        P=new[:pop]
-    sc=[fitness(g)[0] for g in P]; i=int(np.argmax(sc))
-    return P[i],pd.DataFrame(hist,columns=["generation","best","mean"]),snaps,P,sc
-
-tabs=st.tabs(["🎨 Студия","🧬 Эволюция","🤖 Обучение ИИ","📊 Исследование","📚 О проекте"])
-
-with tabs[0]:
-    st.header("Студия")
-    st.write("Теперь используются 13 отдельных параметрических мотивов, а не три условные фигуры.")
-    c1,c2,c3=st.columns(3)
+def auth_screen():
+    st.markdown('''<div class="og-hero"><div class="og-kicker">CREATIVE TECH • KAZAKH ETHNO DESIGN</div><div class="og-title">🧬 ORNAMENTAL GENOME</div><div class="og-sub">AI ETHNO DESIGN LAB — персональная эволюционная студия современного графического дизайна на основе казахских орнаментальных мотивов.</div></div>''',unsafe_allow_html=True)
+    c1,c2=st.columns([1.1,1])
     with c1:
-        m=st.selectbox("Мотив",MOTIFS,index=MOTIFS.index(motif),key="s_m")
-        scale=st.slider("Масштаб",.35,1.55,.8,.05)
-        curve=st.slider("Изгиб / пластика",.35,1.65,1.,.05)
+        st.markdown('### Почему это не просто генератор');st.markdown('''<div class="og-card"><span class="og-pill">Ornament DNA</span><span class="og-pill">Evolution</span><span class="og-pill">Personal AI</span><span class="og-pill">My Studio</span><span class="og-pill">SVG / PNG Export</span><p class="og-small">Алгоритм сохраняет происхождение мотива, эволюционно меняет композицию, а персональная модель учится на выборе пользователя.</p></div>''',unsafe_allow_html=True)
+        st.write('')
+        if st.button('🚀 Попробовать без регистрации',use_container_width=True):st.session_state.guest=True;st.rerun()
     with c2:
-        rep=st.slider("Повторы",3,24,8)
-        rotv=st.slider("Поворот",0,359,0)
-        dens=st.slider("Плотность",.25,1.,.7,.05)
-    with c3:
-        lay=st.selectbox("Композиция",LAYOUTS,index=1)
-        sym=st.selectbox("Симметрия",SYMS,index=3)
-        rad=st.slider("Радиус",1.,5.,2.8,.1)
-    g=genome(m); g.update(scale=scale,curvature=curve,repeats=rep,rotation=rotv,density=dens,layout=LAYOUTS.index(lay),symmetry=SYMS.index(sym),radius=rad)
-    sc,ms,ai=fitness(g)
-    a,b=st.columns([1.2,1])
-    with a:
-        fig=draw(g,f"{m} • {lay} • Fitness {sc:.3f}"); st.pyplot(fig,use_container_width=True); plt.close(fig)
-    with b:
-        st.dataframe(pd.DataFrame({"Критерий":list(ms),"Оценка":list(ms.values())}),hide_index=True,use_container_width=True)
-        if ai is None: st.info("AI‑эксперт пока не обучен.")
-        else: st.metric("AI‑эксперт",f"{ai*100:.1f}%")
+        t1,t2=st.tabs(['Войти','Регистрация'])
+        with t1:
+            u=st.text_input('Логин',key='login_u');p=st.text_input('Пароль',type='password',key='login_p')
+            if st.button('Войти',use_container_width=True):
+                row=login_user(u,p)
+                if row:st.session_state.user=row;st.session_state.guest=False;st.rerun()
+                else:st.error('Неверный логин или пароль.')
+        with t2:
+            d=st.text_input('Имя',key='reg_d');u=st.text_input('Придумайте логин',key='reg_u');p=st.text_input('Придумайте пароль',type='password',key='reg_p')
+            if st.button('Создать аккаунт',use_container_width=True):
+                ok,msg=register_user(u,d,p);(st.success if ok else st.error)(msg)
+    st.info('Прототип конкурса: локальная SQLite-регистрация. Для публичного сервиса базу пользователей нужно вынести в облако (например, Supabase).')
 
-with tabs[1]:
-    st.header("Эволюция")
-    if st.button("🚀 Запустить эволюцию",type="primary"):
-        t=time.time(); best,hist,snaps,P,sc=evolve()
-        st.session_state.run=(best,hist,snaps,P,sc,time.time()-t)
-    if "run" in st.session_state:
-        best,hist,snaps,P,sc,elapsed=st.session_state.run
-        a,b=st.columns([1.2,1])
-        with a:
-            fig=draw(best,f"Победитель • Fitness {fitness(best)[0]:.3f}"); st.pyplot(fig,use_container_width=True); plt.close(fig)
+if not st.session_state.user and not st.session_state.guest:auth_screen();st.stop()
+user=st.session_state.user;is_guest=st.session_state.guest;display_name='Гость' if is_guest else user['display_name'];user_id=None if is_guest else int(user['id'])
+with st.sidebar:
+    st.markdown('## 🧬 ORNAMENTAL GENOME');st.caption('AI ETHNO DESIGN LAB');st.success(f'Профиль: {display_name}')
+    if not is_guest:model,nlearn=personal_model(user_id);st.metric('Обучающих выборов',nlearn);st.caption('После 8+ разнообразных оценок включается персональная ML-модель.')
+    else:model,nlearn=None,0;st.warning('Гостевой режим: библиотека и AI-профиль не сохраняются.')
+    page=st.radio('Навигация',['🎨 Design Studio','🧬 Evolution Lab','✨ AI Designer','📁 My Studio','🏛 Ornament Library','📊 Research Lab','ℹ️ О проекте'])
+    if st.button('Выйти',use_container_width=True):st.session_state.user=None;st.session_state.guest=False;st.rerun()
+
+if page=='🎨 Design Studio':
+    st.markdown('''<div class="og-hero"><div class="og-kicker">STEP 1 • CREATE</div><div class="og-title">Создай современный дизайн с культурным кодом Казахстана</div><div class="og-sub">Выберите мотив, назначение и визуальный характер. Система создаст стартовое поколение — не одну картинку, а пространство вариантов.</div></div>''',unsafe_allow_html=True)
+    c1,c2,c3,c4=st.columns(4);motif=c1.selectbox('Базовый мотив',list(MOTIFS));product=c2.selectbox('Продукт',PRODUCTS);style=c3.selectbox('Стиль',STYLES,index=1);palette=c4.selectbox('Палитра',list(PALETTES));layout=st.selectbox('Композиция',LAYOUTS,index=1);st.caption(MOTIFS[motif]['note'])
+    if st.button('🧬 СОЗДАТЬ ПОКОЛЕНИЕ',type='primary',use_container_width=True):st.session_state.population=[random_genome(motif,style,layout,palette) for _ in range(8)];st.session_state.generation=1;st.session_state.selected=[];st.session_state.final_genome=None
+    if st.session_state.population:
+        st.markdown(f"### Поколение {st.session_state.generation}");st.caption('Выберите 2–4 варианта, которые хотите развивать дальше.');cols=st.columns(4)
+        for i,g in enumerate(st.session_state.population):
+            with cols[i%4]:
+                design_card(g,model);active=i in st.session_state.selected
+                if st.button(('✅ ' if active else '❤️ ')+f'A{i+1:02d}',key=f'pick_{st.session_state.generation}_{i}',use_container_width=True):
+                    if i in st.session_state.selected:st.session_state.selected.remove(i)
+                    else:st.session_state.selected.append(i)
+                    if user_id is not None:save_rating(user_id,g,1,1.0)
+                    st.rerun()
+        cc1,cc2=st.columns([2,1])
+        with cc1:
+            if st.button('⚡ Развить выбранные в следующем поколении',use_container_width=True):
+                sel=[st.session_state.population[i] for i in st.session_state.selected]
+                if len(sel)<2:st.warning('Выберите минимум 2 варианта.')
+                else:
+                    new=[]
+                    while len(new)<8:
+                        a,b=random.sample(sel,2);new.append(mutate(crossover(a,b),.22))
+                    st.session_state.population=new;st.session_state.generation+=1;st.session_state.selected=[];st.rerun()
+        with cc2:
+            if st.button('🏆 Выбрать лучший автоматически',use_container_width=True):st.session_state.final_genome=max(st.session_state.population,key=lambda g:total_score(g,model)[0]);st.success('Финальный кандидат выбран.')
+    if st.session_state.final_genome:
+        g=st.session_state.final_genome;st.markdown('## 🏆 Финальный дизайн');a,b=st.columns([1.25,.75])
+        with a:design_card(g,model)
         with b:
-            st.metric("Время",f"{elapsed:.2f} сек")
-            st.dataframe(pd.DataFrame({"Ген":GENES,"Значение":[best[k] for k in GENES]}),hide_index=True,use_container_width=True)
-        st.subheader("Поколения")
-        cols=st.columns(len(snaps))
-        for c,(gn,gg,ss) in zip(cols,snaps):
-            with c:
-                fig=draw(gg,f"Поколение {gn}\n{ss:.3f}"); st.pyplot(fig,use_container_width=True); plt.close(fig)
-        st.line_chart(hist.set_index("generation")[["best","mean"]])
+            st.markdown('### Ornament DNA');st.json({k:g[k] for k in ['motif','style','layout','palette','scale','rotation','repeats','spacing','density','curve','symmetry']});svg=render_svg(g,1000,600);png=svg_to_png_fallback(g,1000,600);st.download_button('⬇ Скачать SVG',svg,file_name='ornamental_genome.svg',mime='image/svg+xml',use_container_width=True);st.download_button('⬇ Скачать PNG',png,file_name='ornamental_genome.png',mime='image/png',use_container_width=True)
+            if user_id is not None:
+                nm=st.text_input('Название проекта','Мой этнодизайн')
+                if st.button('💾 Сохранить в My Studio',use_container_width=True):save_design(user_id,nm,g['motif'],g,svg);st.success('Сохранено в My Studio.')
+elif page=='🧬 Evolution Lab':
+    st.markdown('## 🧬 Evolution Lab');st.write('Здесь видно, **почему проект называется «Орнаментальный геном»**: два родителя передают гены потомку, затем происходит мутация.');motif=st.selectbox('Мотив',list(MOTIFS),key='evo_m')
+    if 'evo_parents' not in st.session_state:st.session_state.evo_parents=(random_genome(motif,'Balanced Ethno','Розетка','Heritage Gold'),random_genome(motif,'Minimal Ethno','Бордюр','Sky'))
+    if st.button('🎲 Новые родители'):st.session_state.evo_parents=(random_genome(motif,random.choice(STYLES),random.choice(LAYOUTS),random.choice(list(PALETTES))),random_genome(motif,random.choice(STYLES),random.choice(LAYOUTS),random.choice(list(PALETTES))))
+    a,b=st.session_state.evo_parents;child=mutate(crossover(a,b),.28);c1,c2,c3=st.columns(3)
+    with c1:st.subheader('Родитель A');design_card(a,model)
+    with c2:st.subheader('Родитель B');design_card(b,model)
+    with c3:st.subheader('Потомок');design_card(child,model)
+    st.markdown('#### Сравнение генов');st.dataframe(pd.DataFrame([{'Ген':k,'A':a[k],'B':b[k],'Потомок':child[k]} for k in ['scale','rotation','repeats','spacing','density','curve','stroke','symmetry']]),use_container_width=True,hide_index=True)
+elif page=='✨ AI Designer':
+    st.markdown('## ✨ AI Designer — мой Design DNA')
+    if is_guest:st.warning('Персональный AI-профиль работает после регистрации.')
+    else:
+        model,nlearn=personal_model(user_id);st.progress(min(nlearn/20,1.0),text=f'Собрано {nlearn} выборов. Для прототипа модель включается после 8.');st.write('ИИ не определяет «правильность» культуры. Он изучает **индивидуальные дизайнерские предпочтения пользователя**.');qmotif=st.selectbox('Мотив для калибровки',list(MOTIFS),key='ai_m');pair=[random_genome(qmotif,'Minimal Ethno',random.choice(LAYOUTS),random.choice(list(PALETTES))),random_genome(qmotif,'Bold Graphic',random.choice(LAYOUTS),random.choice(list(PALETTES)))];c1,c2=st.columns(2)
+        for i,g in enumerate(pair):
+            with [c1,c2][i]:
+                design_card(g,model);ca,cb=st.columns(2)
+                if ca.button('❤️ Нравится',key=f'like_{i}',use_container_width=True):save_rating(user_id,g,1,1.0);st.rerun()
+                if cb.button('✖ Не моё',key=f'dislike_{i}',use_container_width=True):save_rating(user_id,g,0,0.0);st.rerun()
+elif page=='📁 My Studio':
+    st.markdown('## 📁 My Studio')
+    if is_guest:st.warning('В гостевом режиме проекты не сохраняются. Создайте аккаунт.')
+    else:
+        designs=get_designs(user_id)
+        if not designs:st.info('Пока пусто. Сохраните финальный дизайн из Design Studio.')
+        else:
+            cols=st.columns(3)
+            for i,d in enumerate(designs):
+                with cols[i%3]:
+                    st.markdown(f"### {d['name']}");st.components.v1.html(d['svg'],height=280);st.caption(f"{d['motif']} • {d['created_at']}");st.download_button('SVG',d['svg'],file_name=f"OG_{d['id']}.svg",mime='image/svg+xml',key=f"dsvg_{d['id']}",use_container_width=True)
+elif page=='🏛 Ornament Library':
+    st.markdown('## 🏛 Ornament Library');st.write('Библиотека мотивов — культурная база проекта. В конкурсной версии каждый мотив должен иметь источник и паспорт происхождения.')
+    for name,meta in MOTIFS.items():
+        with st.expander(f"{name} — {meta['category']}"):
+            demo=random_genome(name,'Balanced Ethno','Центральная','Heritage Gold');c1,c2=st.columns([.7,1.3])
+            with c1:st.components.v1.html(render_svg(demo,440,280),height=295)
+            with c2:st.write(meta['note']);st.markdown('**Статус в прототипе:** авторская параметрическая интерпретация для вычислительного эксперимента; не музейная копия.');st.markdown('**Перед финальной подачей:** добавить источник, страницу/объект, автора векторизации и допустимые преобразования.')
+elif page=='📊 Research Lab':
+    st.markdown('## 📊 Research Lab — GA vs Random');st.write('Научная часть продукта: при одинаковом вычислительном бюджете сравниваем эволюционный поиск со случайным.');r1,r2,r3=st.columns(3);motif=r1.selectbox('Мотив',list(MOTIFS),key='res_m');trials=r2.slider('Независимых запусков',5,30,12);budget=r3.slider('Кандидатов в запуске',30,180,80,10)
+    if st.button('▶ Провести эксперимент',type='primary'):
+        data=[];prog=st.progress(0)
+        for t in range(trials):
+            candidates=[random_genome(motif,'Balanced Ethno','Розетка','Heritage Gold') for _ in range(budget)];rnd=max(total_score(g,None)[0] for g in candidates);popn=10;pop=[random_genome(motif,'Balanced Ethno','Розетка','Heritage Gold') for _ in range(popn)];evals=popn
+            while evals+popn<=budget:
+                pop=sorted(pop,key=lambda g:total_score(g,None)[0],reverse=True);parents=pop[:4];new=parents[:2]
+                while len(new)<popn:
+                    a,b=random.sample(parents,2);new.append(mutate(crossover(a,b),.22))
+                pop=new;evals+=popn
+            ga=max(total_score(g,None)[0] for g in pop);data.append({'run':t+1,'GA':ga,'Random':rnd,'difference':ga-rnd});prog.progress((t+1)/trials)
+        st.session_state['research_df']=pd.DataFrame(data)
+    if 'research_df' in st.session_state:
+        df=st.session_state['research_df'];c1,c2,c3=st.columns(3);c1.metric('Средний GA',f'{df.GA.mean():.3f}');c2.metric('Средний Random',f'{df.Random.mean():.3f}');c3.metric('Преимущество GA',f'{df.difference.mean():+.3f}');st.line_chart(df.set_index('run')[['GA','Random']]);st.dataframe(df,use_container_width=True,hide_index=True);st.download_button('⬇ Скачать CSV',df.to_csv(index=False).encode('utf-8-sig'),file_name='ga_vs_random.csv',mime='text/csv')
+else:
+    st.markdown('''<div class="og-hero"><div class="og-kicker">SCIENCE × DESIGN × CULTURE</div><div class="og-title">О проекте</div><div class="og-sub">«Орнаментальный геном» — исследовательский прототип генеративного этнодизайна. Традиционный мотив выступает источником, алгоритм — инструментом поиска композиционных вариантов, человек — финальным дизайнером.</div></div>''',unsafe_allow_html=True)
+    st.markdown('''### Что делает продукт
+1. Кодирует композицию набором генов.
+2. Создаёт популяцию дизайнерских вариантов.
+3. Применяет selection → crossover → mutation.
+4. Позволяет пользователю формировать персональный Design DNA.
+5. Сохраняет проекты в My Studio.
+6. Экспортирует дизайн в SVG и PNG.
+7. Отдельно проводит научный эксперимент GA vs Random.
 
-with tabs[2]:
-    st.header("Как обучается ИИ")
-    st.markdown("""
-**1.** Сайт генерирует примеры → **2.** человек оценивает их →
-**3.** формируется таблица «11 генов → экспертная оценка» →
-**4.** обучается `RandomForestRegressor` →
-**5.** прогноз модели добавляется к Fitness следующего поколения.
-""")
-    st.metric("Размеченных примеров",len(st.session_state.labels))
-    if model is None: st.warning("Нужно минимум 8 разнообразно оценённых вариантов.")
-    else: st.success("AI‑эксперт обучен и участвует в Fitness.")
-    if st.button("Создать 8 вариантов для разметки"):
-        st.session_state.trainset=[genome(motif) for _ in range(8)]
-    for i,gc in enumerate(st.session_state.trainset):
-        with st.expander(f"Вариант {i+1}",expanded=i==0):
-            l,r=st.columns([1,1])
-            with l:
-                fig=draw(gc); st.pyplot(fig,use_container_width=True); plt.close(fig)
-            with r:
-                s=st.slider("Сохранение характера мотива",1,5,3,key=f"q_s{i}")
-                h=st.slider("Гармония",1,5,3,key=f"q_h{i}")
-                o=st.slider("Оригинальность",1,5,3,key=f"q_o{i}")
-                if st.button("Сохранить оценку",key=f"q_b{i}"):
-                    target=(.45*s+.35*h+.20*o)/5
-                    st.session_state.labels.append({"g":dict(gc),"target":target,"style":s,"harmony":h,"originality":o})
-                    st.success("Добавлено.")
-    if st.session_state.labels:
-        rows=[]
-        for x in st.session_state.labels:
-            row={k:x["g"][k] for k in GENES}; row.update(target=x["target"],style=x["style"],harmony=x["harmony"],originality=x["originality"]); rows.append(row)
-        df=pd.DataFrame(rows); st.dataframe(df,use_container_width=True)
-        st.download_button("Скачать обучающую выборку CSV",df.to_csv(index=False).encode("utf-8-sig"),"ornamental_ai_training.csv","text/csv")
-
-with tabs[3]:
-    st.header("Сравнение случайной и эволюционной генерации")
-    if st.button("🧪 Провести эксперимент"):
-        R=[genome(motif) for _ in range(pop)]; rs=[fitness(g)[0] for g in R]
-        best,hist,snaps,P,es=evolve()
-        res=pd.DataFrame({
-            "Метод":["Случайная","Эволюционная"],
-            "Средний Fitness":[np.mean(rs),np.mean(es)],
-            "Лучший Fitness":[np.max(rs),np.max(es)],
-            "Популяция":[pop,pop],"Поколения":[0,gens],"Мотив":[motif,motif]
-        })
-        st.session_state.res=res
-    if "res" in st.session_state:
-        st.dataframe(st.session_state.res,hide_index=True,use_container_width=True)
-        st.bar_chart(st.session_state.res.set_index("Метод")[["Средний Fitness","Лучший Fitness"]])
-        st.download_button("Скачать результаты CSV",st.session_state.res.to_csv(index=False).encode("utf-8-sig"),"experiment_results.csv","text/csv")
-
-with tabs[4]:
-    st.header("Научная логика")
-    st.write("""
-**Библиотека:** 13 мотивов в 4 категориях.  
-**Геном:** 11 параметров.  
-**Эволюция:** отбор, скрещивание, мутация, элитизм.  
-**ИИ:** Random Forest обучается на экспертной разметке пользователя.  
-**Честное ограничение:** контуры являются авторскими стилизованными параметрическими моделями для вычислительного эксперимента, а не точными музейными копиями.
-""")
-    table=[]
-    for c,ms in CATEGORIES.items():
-        for m in ms: table.append({"Категория":c,"Мотив":m})
-    st.dataframe(pd.DataFrame(table),hide_index=True,use_container_width=True)
+### Важное ограничение
+Программа не объявляет сгенерированный результат новым традиционным орнаментом и не оценивает культурную «правильность». Встроенные контуры — авторские стилизованные модели для вычислительного прототипа. Для конкурсной финальной версии библиотека должна быть заменена/уточнена на собственные векторизации документированных источников.
+''')
