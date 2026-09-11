@@ -1,5 +1,5 @@
 import streamlit as st
-import sqlite3, hashlib, json, math, random, io
+import sqlite3, hashlib, json, math, random, io, time
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -9,23 +9,87 @@ from sklearn.ensemble import RandomForestRegressor
 APP_DIR = Path(__file__).parent
 DB_PATH = APP_DIR / 'ornamental_genome.db'
 
-st.set_page_config(page_title='ORNAMENTAL GENOME — AI ETHNO DESIGN LAB', page_icon='🧬', layout='wide')
+st.set_page_config(page_title='ORNAMENTAL GENOME AI — Kazakh Creative Lab', page_icon='✦', layout='wide', initial_sidebar_state='collapsed')
 
-st.markdown('''
+# =========================================================
+# DESIGN SYSTEM — intentionally close to the supplied mockup
+# =========================================================
+st.markdown(r'''
 <style>
-:root {--gold:#f4c95d;--pink:#ff5c8a;--cyan:#62e6e6;--card:#171a22;--muted:#aeb7c7;}
-.stApp{background:radial-gradient(circle at 10% 10%,rgba(98,230,230,.08),transparent 28%),radial-gradient(circle at 90% 5%,rgba(255,92,138,.08),transparent 32%),linear-gradient(180deg,#0b0d12 0%,#11151d 100%);color:#f4f7fb}
-.block-container{padding-top:1.2rem;padding-bottom:3rem;max-width:1450px}
-.og-hero{border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:34px 36px;background:linear-gradient(135deg,rgba(244,201,93,.12),rgba(255,92,138,.08),rgba(98,230,230,.08));box-shadow:0 20px 60px rgba(0,0,0,.25);margin-bottom:18px}
-.og-kicker{font-size:.8rem;font-weight:800;letter-spacing:.18em;color:#f4c95d}.og-title{font-size:2.6rem;font-weight:900;line-height:1.05;margin:.25rem 0}.og-sub{color:#c6ceda;font-size:1.02rem;max-width:900px}
-.og-card{background:rgba(23,26,34,.93);border:1px solid rgba(255,255,255,.08);border-radius:22px;padding:18px}.og-pill{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(244,201,93,.13);color:#f4c95d;font-size:.78rem;font-weight:700;margin:2px 4px 2px 0}.og-small{color:#aeb7c7;font-size:.88rem}
-div[data-testid='stButton'] button,div[data-testid='stDownloadButton'] button{border-radius:14px;font-weight:800}
+:root{
+ --navy:#032f40; --navy2:#063c50; --deep:#052937; --cyan:#10c3df;
+ --gold:#e5ad45; --cream:#f8f2e7; --red:#d63a34; --teal:#11778a;
+ --ink:#0c3d51; --line:rgba(255,255,255,.13); --soft:#eae5d9;
+}
+html,body,[class*="css"]{font-family:Inter,Segoe UI,Arial,sans-serif}
+.stApp{background:linear-gradient(180deg,#06394b 0%,#052f3e 100%);color:white}
+[data-testid="stHeader"]{background:transparent;height:0}
+.block-container{padding:0!important;max-width:100%!important}
+#MainMenu,footer{visibility:hidden}
+
+/* top navigation */
+.og-top{height:78px;background:linear-gradient(90deg,#022e3e,#07394b);border-bottom:1px solid rgba(255,255,255,.12);display:flex;align-items:center;padding:0 26px;gap:28px;position:sticky;top:0;z-index:50}
+.og-brand{min-width:285px;display:flex;align-items:center;gap:14px}
+.og-logo{width:47px;height:47px;border:2px solid #e5ad45;border-radius:15px;display:grid;place-items:center;color:#e5ad45;font-size:28px;transform:rotate(45deg)}
+.og-logo span{transform:rotate(-45deg)}
+.og-brand b{font-family:Georgia,serif;font-size:21px;line-height:1.05;color:#f8e6bd;letter-spacing:.04em}
+.og-brand small{display:block;color:#d6c79f;letter-spacing:.19em;font-size:10px;margin-top:4px}
+.og-nav{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.og-nav span{padding:10px 14px;border-radius:15px;color:#e8f1f4;font-size:14px;white-space:nowrap}
+.og-nav span.active{background:#0584a4;border:1px solid #1ed1eb;box-shadow:0 0 0 1px rgba(16,195,223,.13) inset}
+.og-user{margin-left:auto;color:#f1f6f7;font-weight:700}
+
+/* overall 3-column studio */
+.og-shell{padding:14px 18px 18px}
+.og-section-title{display:flex;align-items:center;gap:9px;font-size:18px;font-weight:850;margin:14px 0 10px;color:#fff}
+.og-step{width:27px;height:27px;border-radius:999px;background:#19b8d5;display:grid;place-items:center;font-weight:900;font-size:13px;box-shadow:0 4px 14px rgba(25,184,213,.25)}
+.og-panel{background:rgba(0,36,50,.72);border:1px solid rgba(112,201,223,.17);border-radius:19px;padding:14px;box-shadow:0 15px 38px rgba(0,0,0,.16)}
+.og-main-card{background:#f7f2e8;border:1px solid #d5d8d2;border-radius:20px;padding:16px;color:#07384b;box-shadow:0 14px 38px rgba(0,0,0,.2)}
+.og-hero{height:184px;border-radius:0 0 22px 22px;overflow:hidden;padding:24px 28px;position:relative;background:radial-gradient(circle at 22% 20%,rgba(221,173,78,.28),transparent 24%),linear-gradient(120deg,rgba(5,56,73,.86),rgba(5,54,70,.96)),repeating-linear-gradient(45deg,rgba(229,173,69,.08) 0 2px,transparent 2px 18px)}
+.og-hero:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0 60%,rgba(229,173,69,.07));pointer-events:none}
+.og-hero h1{font-family:Georgia,serif;color:white;font-size:39px;margin:0 0 7px;line-height:1.05}
+.og-hero p{font-size:18px;color:#e4f0f1;margin:0}
+.og-hero .motto{position:absolute;right:35px;bottom:27px;color:#f6c75c;font-family:Georgia,serif;font-style:italic;font-size:22px;text-align:center;line-height:1.25;transform:rotate(-4deg)}
+
+/* motif cards */
+.og-motif-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.og-motif-card{background:#f6f0e5;border:1px solid #d7ccba;border-radius:12px;padding:7px 5px;text-align:center;min-height:100px;color:#07394a}
+.og-motif-card.active{outline:2px solid #e7b24e;box-shadow:0 0 0 3px rgba(229,173,69,.13)}
+.og-motif-card svg{width:56px;height:56px}.og-motif-card b{font-size:12px;display:block;margin-top:2px}
+
+/* product buttons and chips */
+.og-product-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.og-product{border:1px solid rgba(153,216,231,.26);background:#053344;border-radius:11px;text-align:center;padding:12px 4px;color:#f0f6f7;font-size:12px}.og-product.active{border-color:#12c2df;box-shadow:0 0 12px rgba(18,194,223,.19)}
+.og-icon{font-size:24px;display:block;margin-bottom:5px}
+.og-chips{display:flex;gap:7px}.og-chip{border:1px solid rgba(155,218,232,.25);padding:8px 11px;border-radius:9px;font-size:12px;color:#d9e8eb}.og-chip.active{border-color:#14c7e3;background:#0a5267;color:white}
+.og-swatches{display:flex;gap:9px;margin-top:12px}.og-swatch{width:34px;height:34px;border-radius:7px;border:1px solid rgba(255,255,255,.2)}
+
+/* evolution ribbon */
+.og-evo-title{font-weight:900;font-size:18px;margin-bottom:12px;color:#07384b}.og-evo-row{display:grid;grid-template-columns:1fr 45px 1fr 45px 1fr 45px 1fr 45px 1fr;align-items:center;text-align:center;gap:5px}.og-stage small{display:block;font-weight:800;margin-bottom:7px}.og-stage svg{width:78px;height:78px}.og-arrow{font-size:28px;color:#0c5367;font-weight:900}.og-progress-bg{height:15px;border-radius:999px;background:#d8d8cf;margin-top:17px;overflow:hidden;border:1px solid #c3c4bb}.og-progress-fill{height:100%;width:75%;background:linear-gradient(90deg,#006a82,#05bfdc 82%,#b9f7ff);box-shadow:0 0 12px #1ddcf5}
+
+/* generation cards */
+.og-gen-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.og-gen-head h3{font-size:20px;margin:0;color:#07384b}.og-gen-head .sort{border:1px solid #99b8c0;border-radius:9px;padding:7px 12px;background:#fff;font-size:12px}
+.og-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}.og-design{background:#fffaf0;border:1px solid #e1ded4;border-radius:13px;padding:8px;box-shadow:0 5px 10px rgba(20,40,45,.06)}.og-design .art{background:#f5ede1;border-radius:10px;aspect-ratio:1/1;display:grid;place-items:center;overflow:hidden}.og-design svg{width:92%;height:92%}.og-design .meta{display:flex;align-items:end;justify-content:space-between;color:#07384b;margin-top:6px}.og-design .meta b{font-size:12px}.og-design .meta small{font-size:11px;color:#5d7882}.og-heart{font-size:20px;color:#d53455}
+
+/* right cards */
+.og-r-title{font-size:17px;font-weight:850;margin:0 0 13px}.og-field{display:flex;align-items:center;justify-content:space-between;margin:10px 0;font-size:13px}.og-field strong{background:#0b4659;border-radius:9px;padding:7px 12px;min-width:80px;text-align:center}.og-motif-info{display:grid;grid-template-columns:82px 1fr;gap:13px;align-items:center}.og-info-thumb{background:#f7f0e4;border-radius:10px;height:125px;display:grid;place-items:center}.og-info-thumb svg{width:70px;height:70px}.og-copy{font-size:13px;color:#dce9eb;line-height:1.45}.og-link{color:#20cce8;font-size:12px;margin-top:5px}.og-pack{height:230px;border-radius:13px;background:radial-gradient(circle at 82% 20%,#b9473f 0 13%,transparent 28%),linear-gradient(135deg,#5a281c,#c67c43 47%,#efe3ce 48% 100%);display:grid;place-items:center;overflow:hidden}.og-box{width:130px;height:175px;background:#f5e4c7;border-radius:2px;box-shadow:0 12px 28px rgba(0,0,0,.28);display:flex;align-items:stretch}.og-box-strip{width:43px;background:#d53b34;display:grid;place-items:center}.og-box-text{flex:1;display:grid;place-items:center;text-align:center;color:#3c2e21;font-family:Georgia,serif;font-size:13px}.og-download{background:#0ab48f;border-radius:10px;padding:13px 12px;text-align:center;font-weight:900;font-size:16px;margin-top:12px}.og-formats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:10px}.og-format{border:1px solid rgba(200,233,238,.3);border-radius:8px;padding:8px 4px;text-align:center;font-size:11px}
+
+/* Streamlit widgets */
+div[data-testid="stButton"] button{border-radius:10px;font-weight:800;min-height:40px}
+div[data-testid="stButton"] button[kind="primary"]{background:linear-gradient(90deg,#f3c15b,#e5a93e);color:#06364a;border:none;box-shadow:0 8px 20px rgba(229,173,69,.24)}
+div[data-testid="stDownloadButton"] button{border-radius:10px;font-weight:800;background:#0bad8a;color:white;border:none}
+.stSelectbox div[data-baseweb="select"]>div,.stNumberInput input,.stTextInput input{background:#0b4659!important;color:white!important;border-color:rgba(255,255,255,.12)!important;border-radius:9px!important}
+.stSlider{padding-top:0}.stTabs [data-baseweb="tab-list"]{gap:8px}.stTabs [data-baseweb="tab"]{background:#073b4d;border-radius:11px;color:white;padding:8px 14px}
+
+/* auth */
+.og-auth-wrap{max-width:1020px;margin:80px auto}.og-auth-card{background:#f7f1e7;color:#06384a;border-radius:24px;padding:28px;box-shadow:0 25px 70px rgba(0,0,0,.3)}
+
+@media(max-width:1150px){.og-grid{grid-template-columns:repeat(3,1fr)}.og-nav span:nth-child(n+5){display:none}.og-brand{min-width:245px}}
 </style>
 ''', unsafe_allow_html=True)
 
 # ---------- database ----------
 def db():
-    con=sqlite3.connect(DB_PATH,check_same_thread=False); con.row_factory=sqlite3.Row; return con
+    con = sqlite3.connect(DB_PATH, check_same_thread=False); con.row_factory = sqlite3.Row; return con
 
 def init_db():
     con=db(); cur=con.cursor()
@@ -40,33 +104,35 @@ def register_user(u,d,p):
     u=u.strip().lower()
     if len(u)<3 or len(p)<4:return False,'Логин — минимум 3 символа, пароль — минимум 4.'
     try:
-        con=db(); con.execute('INSERT INTO users(username,display_name,password_hash) VALUES(?,?,?)',(u,d.strip() or u,phash(p))); con.commit(); con.close(); return True,'Аккаунт создан.'
+        con=db();con.execute('INSERT INTO users(username,display_name,password_hash) VALUES(?,?,?)',(u,d.strip() or u,phash(p)));con.commit();con.close();return True,'Аккаунт создан.'
     except sqlite3.IntegrityError:return False,'Такой логин уже существует.'
 def login_user(u,p):
-    con=db(); row=con.execute('SELECT * FROM users WHERE username=? AND password_hash=?',(u.strip().lower(),phash(p))).fetchone(); con.close(); return dict(row) if row else None
+    con=db();row=con.execute('SELECT * FROM users WHERE username=? AND password_hash=?',(u.strip().lower(),phash(p))).fetchone();con.close();return dict(row) if row else None
 def save_rating(uid,g,liked,rating=None):
-    con=db(); con.execute('INSERT INTO ratings(user_id,genome_json,liked,rating) VALUES(?,?,?,?)',(uid,json.dumps(g,ensure_ascii=False),int(liked),rating)); con.commit(); con.close()
+    con=db();con.execute('INSERT INTO ratings(user_id,genome_json,liked,rating) VALUES(?,?,?,?)',(uid,json.dumps(g,ensure_ascii=False),int(liked),rating));con.commit();con.close()
 def get_ratings(uid):
-    con=db(); rows=con.execute('SELECT * FROM ratings WHERE user_id=? ORDER BY id',(uid,)).fetchall(); con.close(); return [dict(r) for r in rows]
+    con=db();rows=con.execute('SELECT * FROM ratings WHERE user_id=? ORDER BY id',(uid,)).fetchall();con.close();return [dict(r) for r in rows]
 def save_design(uid,name,motif,g,svg):
-    con=db(); con.execute('INSERT INTO designs(user_id,name,motif,genome_json,svg) VALUES(?,?,?,?,?)',(uid,name,motif,json.dumps(g,ensure_ascii=False),svg)); con.commit(); con.close()
+    con=db();con.execute('INSERT INTO designs(user_id,name,motif,genome_json,svg) VALUES(?,?,?,?,?)',(uid,name,motif,json.dumps(g,ensure_ascii=False),svg));con.commit();con.close()
 def get_designs(uid):
-    con=db(); rows=con.execute('SELECT * FROM designs WHERE user_id=? ORDER BY id DESC',(uid,)).fetchall(); con.close(); return [dict(r) for r in rows]
+    con=db();rows=con.execute('SELECT * FROM designs WHERE user_id=? ORDER BY id DESC',(uid,)).fetchall();con.close();return [dict(r) for r in rows]
 
+# ---------- product model ----------
 MOTIFS={
-'Қошқар мүйіз':{'category':'Зооморфный','note':'Стилизованный мотив рогов. В прототипе используется авторская параметрическая векторизация.'},
-'Қос мүйіз':{'category':'Зооморфный','note':'Парная композиция рогов; удобна для зеркальной симметрии.'},
-'Тұмарша':{'category':'Геометрический','note':'Треугольная композиционная основа; в прототипе — геометрическая интерпретация.'},
-'Ирек':{'category':'Геометрический','note':'Ломаный/волнообразный ритм, удобный для бордюрных паттернов.'},
-'Жұлдыз':{'category':'Космогонический','note':'Звёздчатая геометрическая структура.'}}
-PRODUCTS=['Постер','Упаковка','Шоппер','Обложка','Соцсети','Фирменный паттерн']
-STYLES=['Balanced Ethno','Minimal Ethno','Bold Graphic','Editorial','Festival']
-LAYOUTS=['Бордюр','Розетка','Сетка','Центральная']
-PALETTES={'Heritage Gold':['#0B1B2B','#F4C95D','#E9E2D0'],'Steppe':['#2E4B3F','#C7A46A','#F2E9D7'],'Modern Red':['#201A1A','#D94B4B','#F4EDE3'],'Sky':['#103D5A','#5CC8D7','#F1D8A5'],'Monochrome':['#111111','#F4F4F4','#8C8C8C']}
+'Қошқар мүйіз':('Зооморфный','#d63a34'), 'Түйетабан':('Зооморфный','#11778a'), 'Қазмойын':('Зооморфный','#bf8a2e'),
+'Құстаңдай':('Зооморфный','#115d4e'), 'Гүл':('Растительный','#d63a34'), 'Тұмарша':('Геометрический','#0d5e73'),
+'Жұлдыз':('Космогонический','#bf8a2e'), 'Төртқұлақ':('Космогонический','#147b81'), 'Бітпес':('Космогонический','#8f5a35')}
+PRODUCTS=['Логотип','Упаковка','Постер','Текстиль','Сувенир','Соцсети']
+STYLES=['Классика','Современный','Минимал']
+LAYOUTS=['Розетка','Бордюр','Центральная','Сетка']
+PALETTES={'Qazaq Red':['#fff5e5','#d63a34','#0d5e73','#e1aa43'],'Altai Teal':['#f8f0df','#0d5e73','#11778a','#d9a33d'],'Steppe Gold':['#fff4df','#bf8a2e','#7a4d29','#0d5e73'],'Emerald':['#f8f0df','#115d4e','#147b81','#d3a747']}
 
-def random_genome(motif,style,layout,palette):
-    bias={'Minimal Ethno':(.65,.45),'Balanced Ethno':(.85,.62),'Bold Graphic':(1,.78),'Editorial':(.78,.58),'Festival':(1.05,.82)}[style]
-    return {'motif':motif,'style':style,'layout':layout,'palette':palette,'scale':round(random.uniform(bias[0]*.78,bias[0]*1.18),3),'rotation':random.choice([0,15,30,45,60,90]),'repeats':random.randint(4,12),'spacing':round(random.uniform(.72,1.35),3),'density':round(min(1,max(.2,random.gauss(bias[1],.12))),3),'curve':round(random.uniform(.55,1),3),'stroke':round(random.uniform(2,5),2),'symmetry':random.choice([0,1,2]),'layout_idx':LAYOUTS.index(layout),'seed':random.randint(1,999999)}
+def random_genome(motif,style='Современный',layout='Розетка',palette='Qazaq Red'):
+    bias={'Классика':(.90,.72),'Современный':(.82,.64),'Минимал':(.68,.46)}[style]
+    return {'motif':motif,'style':style,'layout':layout,'palette':palette,
+            'scale':round(random.uniform(bias[0]*.80,bias[0]*1.18),3),'rotation':random.choice([0,15,30,45,60,90]),
+            'repeats':random.randint(4,12),'spacing':round(random.uniform(.75,1.28),3),'density':round(float(np.clip(random.gauss(bias[1],.10),.25,.95)),3),
+            'curve':round(random.uniform(.65,1.0),3),'stroke':round(random.uniform(2.5,5.2),2),'symmetry':random.choice([1,2]),'layout_idx':LAYOUTS.index(layout),'seed':random.randint(1,999999)}
 
 def feature_vector(g):
     return [list(MOTIFS).index(g['motif']),STYLES.index(g['style']),list(PALETTES).index(g['palette']),g['scale'],g['rotation']/90,g['repeats']/12,g['spacing'],g['density'],g['curve'],g['stroke']/5,g['symmetry']/2,g['layout_idx']/3]
@@ -74,221 +140,289 @@ def feature_vector(g):
 def personal_model(uid):
     rows=get_ratings(uid);X=[];y=[]
     for r in rows:
-        g=json.loads(r['genome_json']); X.append(feature_vector(g)); y.append(float(r['rating']) if r['rating'] is not None else float(r['liked']))
+        g=json.loads(r['genome_json']);X.append(feature_vector(g));y.append(float(r['rating']) if r['rating'] is not None else float(r['liked']))
     if len(X)<8 or len(set(y))<2:return None,len(X)
     m=RandomForestRegressor(n_estimators=160,random_state=42,max_depth=7);m.fit(np.array(X),np.array(y));return m,len(X)
-def ai_match(model,g): return None if model is None else float(np.clip(model.predict([feature_vector(g)])[0],0,1))
+def ai_match(model,g):return None if model is None else float(np.clip(model.predict([feature_vector(g)])[0],0,1))
 def structure_score(g):
-    s_sym=[.65,.90,.94][g['symmetry']]; target={'Minimal Ethno':.45,'Balanced Ethno':.62,'Bold Graphic':.78,'Editorial':.58,'Festival':.82}[g['style']]; s_density=max(0,1-abs(g['density']-target)/.7);s_repeat=1-min(abs(g['repeats']-8)/10,1);s_clean=1-min(max(g['scale']*g['density']-.85,0),.5);return float(np.clip(.30*s_sym+.26*s_density+.22*s_repeat+.22*s_clean,0,1))
-def novelty_score(g): return float(np.clip(.25*(g['rotation']/90)+.25*abs(g['spacing']-1)+.25*abs(g['density']-.6)+.25*abs(g['curve']-.75),0,1))
+    td={'Классика':.72,'Современный':.64,'Минимал':.46}[g['style']]
+    sd=max(0,1-abs(g['density']-td)/.6);sr=1-min(abs(g['repeats']-8)/9,1);ss=.94 if g['symmetry']==2 else .88
+    return float(np.clip(.36*ss+.34*sd+.30*sr,0,1))
+def novelty_score(g):return float(np.clip(.32*g['rotation']/90+.25*abs(g['spacing']-1)+.23*abs(g['density']-.6)+.20*abs(g['curve']-.8),0,1))
 def total_score(g,model=None):
-    s=structure_score(g);n=novelty_score(g);p=ai_match(model,g);t=.78*s+.22*n if p is None else .62*s+.18*n+.20*p;return t,s,n,p
+    s=structure_score(g);n=novelty_score(g);a=ai_match(model,g);t=.78*s+.22*n if a is None else .60*s+.18*n+.22*a;return float(t),s,n,a
 
 def crossover(a,b):
     c=dict(a)
-    for k in ['scale','rotation','repeats','spacing','density','curve','stroke','symmetry','layout_idx']:c[k]=a[k] if random.random()<.5 else b[k]
+    for k in ['scale','rotation','repeats','spacing','density','curve','stroke','symmetry','layout_idx']:
+        c[k]=a[k] if random.random()<.5 else b[k]
     c['layout']=LAYOUTS[int(c['layout_idx'])];c['seed']=random.randint(1,999999);return c
-
-def mutate(g,rate=.18):
+def mutate(g,rate=.15):
     c=dict(g)
-    if random.random()<rate:c['scale']=round(float(np.clip(c['scale']+random.gauss(0,.08),.45,1.35)),3)
+    if random.random()<rate:c['scale']=round(float(np.clip(c['scale']+random.gauss(0,.07),.45,1.3)),3)
     if random.random()<rate:c['rotation']=int(np.clip(c['rotation']+random.choice([-15,15,30]),0,90))
     if random.random()<rate:c['repeats']=int(np.clip(c['repeats']+random.choice([-2,-1,1,2]),3,14))
-    if random.random()<rate:c['spacing']=round(float(np.clip(c['spacing']+random.gauss(0,.08),.62,1.5)),3)
+    if random.random()<rate:c['spacing']=round(float(np.clip(c['spacing']+random.gauss(0,.08),.65,1.45)),3)
     if random.random()<rate:c['density']=round(float(np.clip(c['density']+random.gauss(0,.07),.2,1)),3)
-    if random.random()<rate:c['curve']=round(float(np.clip(c['curve']+random.gauss(0,.08),.4,1.2)),3)
-    if random.random()<rate:c['stroke']=round(float(np.clip(c['stroke']+random.gauss(0,.5),1.5,6)),2)
-    if random.random()<rate:c['symmetry']=random.choice([0,1,2])
+    if random.random()<rate:c['curve']=round(float(np.clip(c['curve']+random.gauss(0,.07),.45,1.15)),3)
     return c
 
-def motif_svg(motif,stroke='#F4C95D',sw=4):
-    if motif=='Қошқар мүйіз': path='M 60 78 C 42 78,34 66,36 52 C 38 38,52 32,61 39 C 70 46,69 58,61 63 C 54 68,45 64,45 57 C 45 51,50 47,55 48 C 63 49,68 56,71 66 C 75 80,84 89,99 91'
-    elif motif=='Қос мүйіз': path='M60 76 C45 77 34 67 35 53 C36 39 48 33 59 40 C67 45 67 57 59 62 C50 67 43 62 44 55 M60 76 C75 77 86 67 85 53 C84 39 72 33 61 40 C53 45 53 57 61 62 C70 67 77 62 76 55'
-    elif motif=='Тұмарша': path='M60 22 L101 94 L19 94 Z M60 42 L82 81 L38 81 Z M60 58 L70 76 L50 76 Z'
-    elif motif=='Ирек': path='M10 70 L28 45 L46 70 L64 45 L82 70 L100 45 L112 61'
-    else:
+# ---------- ornamental SVG ----------
+def motif_core(name, color='#d63a34', accent='#0d5e73'):
+    # Deliberately filled, decorative author-created SVG motifs instead of thin line stars.
+    if name=='Қошқар мүйіз':
+        return f'''<g fill="{color}"><path d="M58 24c-23-4-38 13-36 31 2 17 18 27 34 20 12-5 16-20 8-30-6-8-17-7-21 0-4 7 2 15 9 14 7-1 8-8 5-12 11 4 15 18 8 28-8 13-28 14-39 4C3 59 4 32 23 18 35 9 51 9 62 14z"/><path d="M62 14c11-5 27-5 39 4 19 14 20 41 5 53-11 10-31 9-39-4-7-10-3-24 8-28-3 4-2 11 5 12 7 1 13-7 9-14-4-7-15-8-21 0-8 10-4 25 8 30 16 7 32-3 34-20 2-18-13-35-36-31z"/></g><path d="M60 66l13 15-13 13-13-13z" fill="{accent}"/>'''
+    if name=='Түйетабан':
+        return f'''<g fill="{color}"><path d="M60 12l10 22 24-5-14 20 18 16-25 2-3 25-10-22-10 22-3-25-25-2 18-16-14-20 24 5z"/></g><circle cx="60" cy="60" r="15" fill="{accent}"/><circle cx="60" cy="60" r="7" fill="#f8f0df"/>'''
+    if name=='Қазмойын':
+        return f'''<path d="M31 89C17 72 20 47 38 36c13-8 31-5 38 7 6 10 3 22-7 27-8 4-17 1-20-6-3-6 1-12 7-13-2 7 6 12 11 7 8-7 0-17-10-16-12 1-22 14-21 28 1 15 15 24 30 22V89H31z" fill="{color}"/><path d="M71 39c13-11 28-7 33 6-9-6-18-3-23 4z" fill="{accent}"/>'''
+    if name=='Құстаңдай':
+        return f'''<g fill="{color}"><path d="M60 10l12 26 28-6-17 23 21 18-29 2-5 29-10-27-10 27-5-29-29-2 21-18-17-23 28 6z"/></g><path d="M60 31l8 21 22 8-22 8-8 21-8-21-22-8 22-8z" fill="#f8f0df"/><circle cx="60" cy="60" r="9" fill="{accent}"/>'''
+    if name=='Гүл':
+        petals=''.join([f'<ellipse cx="60" cy="28" rx="12" ry="22" transform="rotate({i*45} 60 60)" fill="{color}"/>' for i in range(8)])
+        return petals+f'<circle cx="60" cy="60" r="15" fill="{accent}"/><circle cx="60" cy="60" r="7" fill="#f8f0df"/>'
+    if name=='Тұмарша':
+        return f'''<path d="M60 13L106 97H14z" fill="{color}"/><path d="M60 34l25 48H35z" fill="#f8f0df"/><path d="M60 48l14 28H46z" fill="{accent}"/><circle cx="60" cy="60" r="5" fill="#f8f0df"/>'''
+    if name=='Жұлдыз':
         pts=[]
-        for i in range(10):
-            a=-math.pi/2+i*math.pi/5;r=42 if i%2==0 else 18;pts.append((60+r*math.cos(a),60+r*math.sin(a)))
-        path='M '+' L '.join(f'{x:.1f} {y:.1f}' for x,y in pts)+' Z'
-    return f'<g><path d="{path}" fill="none" stroke="{stroke}" stroke-width="{sw}" stroke-linecap="round" stroke-linejoin="round"/></g>'
-def transform_group(x,y,scale,rot,content): return f'<g transform="translate({x:.2f},{y:.2f}) rotate({rot:.2f}) scale({scale:.3f}) translate(-60,-60)">{content}</g>'
-def render_svg(g,width=760,height=460):
-    bg,main,accent=PALETTES[g['palette']];motif=motif_svg(g['motif'],main,g['stroke']);groups=[];n=max(3,int(g['repeats']));sc=max(.35,min(1.2,g['scale']));layout=g['layout']
-    if layout=='Бордюр':
-        y=height/2;gap=width/(n+1)
+        for i in range(16):
+            a=-math.pi/2+i*math.pi/8;r=46 if i%2==0 else 25;pts.append(f'{60+r*math.cos(a):.1f},{60+r*math.sin(a):.1f}')
+        return f'<polygon points="{" ".join(pts)}" fill="{color}"/><circle cx="60" cy="60" r="20" fill="#f8f0df"/><circle cx="60" cy="60" r="11" fill="{accent}"/>'
+    if name=='Төртқұлақ':
+        return f'''<g fill="{color}"><path d="M53 53C28 51 21 33 31 20c8-10 23-5 20 7-2 7-9 9-14 5 3 10 15 12 23 2z"/><path d="M67 53C69 28 87 21 100 31c10 8 5 23-7 20-7-2-9-9-5-14-10 3-12 15-2 23z"/><path d="M67 67c25 2 32 20 22 33-8 10-23 5-20-7 2-7 9-9 14-5-3-10-15-12-23-2z"/><path d="M53 67c-2 25-20 32-33 22-10-8-5-23 7-20 7 2 9 9 5 14 10-3 12-15 2-23z"/></g><circle cx="60" cy="60" r="10" fill="{accent}"/>'''
+    return f'''<g fill="{color}"><path d="M18 36c18-23 35-20 42 1 7-21 24-24 42-1-21-4-24 13-15 24-9 11-6 28 15 24-18 23-35 20-42-1-7 21-24 24-42 1 21 4 24-13 15-24 9-11 6-28-15-24z"/></g><circle cx="60" cy="60" r="12" fill="{accent}"/>'''
+
+def tile_svg(name,color,accent='#0d5e73',w=120,h=120):return f'<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">{motif_core(name,color,accent)}</svg>'
+
+def composition_svg(g,w=160,h=160):
+    colors=PALETTES[g['palette']];bg,main,accent=colors[0],colors[1],colors[2]
+    core=motif_core(g['motif'],main,accent);n=max(4,min(int(g['repeats']),12));parts=[]
+    if g['layout']=='Розетка':
+        for i in range(4):parts.append(f'<g transform="translate({w/2-42},{h/2-42}) rotate({i*90+g["rotation"]} 42 42) scale(.70)">{core}</g>')
+    elif g['layout']=='Бордюр':
+        for i in range(min(n,5)):
+            x=(i+.5)*w/min(n,5)-36;parts.append(f'<g transform="translate({x},{h/2-36}) scale(.60)">{core}</g>')
+    elif g['layout']=='Сетка':
+        for r in range(2):
+            for c in range(2):parts.append(f'<g transform="translate({c*w/2+12},{r*h/2+12}) scale(.55)">{core}</g>')
+    else:parts.append(f'<g transform="translate({w/2-60},{h/2-60}) rotate({g["rotation"]} 60 60) scale(1.0)">{core}</g>')
+    return f'<svg viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" rx="16" fill="{bg}"/>{"".join(parts)}</svg>'
+
+def full_design_svg(g,w=1000,h=650):
+    colors=PALETTES[g['palette']];bg,main,accent=colors[0],colors[1],colors[2];core=motif_core(g['motif'],main,accent);parts=[]
+    n=max(4,min(int(g['repeats']),12))
+    if g['layout']=='Розетка':
         for i in range(n):
-            x=gap*(i+1);rr=g['rotation']*((-1)**i if g['symmetry']==1 else 1);groups.append(transform_group(x-60,y-60,sc*.78,rr,motif))
-    elif layout=='Розетка':
-        R=min(width,height)*.27*g['spacing']
+            a=2*math.pi*i/n;R=min(w,h)*.29;x=w/2+R*math.cos(a)-60;y=h/2+R*math.sin(a)-60
+            parts.append(f'<g transform="translate({x},{y}) rotate({math.degrees(a)+g["rotation"]} 60 60) scale({g["scale"]*.72})">{core}</g>')
+    elif g['layout']=='Бордюр':
         for i in range(n):
-            a=2*math.pi*i/n;x=width/2+R*math.cos(a)-60;y=height/2+R*math.sin(a)-60;groups.append(transform_group(x,y,sc*.72,math.degrees(a)+g['rotation'],motif))
-    elif layout=='Сетка':
-        cols=max(2,int(math.sqrt(n*1.6)));rows=max(2,math.ceil(n/cols));sx=width/(cols+1);sy=height/(rows+1);k=0
+            x=(i+.5)*w/n-60;parts.append(f'<g transform="translate({x},{h/2-60}) scale({g["scale"]*.75})">{core}</g>')
+    elif g['layout']=='Сетка':
+        cols=4;rows=max(2,math.ceil(n/cols));k=0
         for r in range(rows):
             for c in range(cols):
                 if k>=n:break
-                x=sx*(c+1)-60;y=sy*(r+1)-60;rot=g['rotation']+(180 if (g['symmetry']==1 and (r+c)%2) else 0);groups.append(transform_group(x,y,sc*.58,rot,motif));k+=1
-    else:
-        groups.append(transform_group(width/2-60,height/2-60,sc*1.75,g['rotation'],motif))
-        for i in range(min(n,8)):
-            a=2*math.pi*i/min(n,8);R=min(width,height)*.28;x=width/2+R*math.cos(a)-60;y=height/2+R*math.sin(a)-60;groups.append(transform_group(x,y,sc*.48,math.degrees(a)+g['rotation'],motif))
-    border=f'<rect x="20" y="20" width="{width-40}" height="{height-40}" rx="24" fill="none" stroke="{accent}" opacity=".22" stroke-width="2"/>'
-    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><rect width="100%" height="100%" rx="28" fill="{bg}"/>{border}{"".join(groups)}</svg>'
+                x=(c+.5)*w/cols-60;y=(r+.5)*h/rows-60;parts.append(f'<g transform="translate({x},{y}) scale({g["scale"]*.66})">{core}</g>');k+=1
+    else:parts.append(f'<g transform="translate({w/2-60},{h/2-60}) rotate({g["rotation"]} 60 60) scale({g["scale"]*2.4})">{core}</g>')
+    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><rect width="100%" height="100%" fill="{bg}"/><rect x="28" y="28" width="{w-56}" height="{h-56}" rx="30" fill="none" stroke="{accent}" opacity=".26" stroke-width="4"/>{"".join(parts)}</svg>'
 
-def svg_to_png_fallback(g,width=1000,height=600):
-    bg,main,_=PALETTES[g['palette']];img=Image.new('RGB',(width,height),bg);d=ImageDraw.Draw(img);n=max(3,int(g['repeats']));w=max(2,int(g['stroke']))
-    if g['layout']=='Бордюр':
-        for i in range(n):
-            x=(i+1)*width/(n+1);y=height/2;r=28+24*g['scale'];d.arc((x-r,y-r,x+r,y+r),180,520,fill=main,width=w);d.line((x,y,x+r*.9,y+r*.65),fill=main,width=w)
-    elif g['layout']=='Розетка':
-        R=min(width,height)*.28
-        for i in range(n):
-            a=2*math.pi*i/n;x=width/2+R*math.cos(a);y=height/2+R*math.sin(a);r=24+20*g['scale'];d.arc((x-r,y-r,x+r,y+r),170,520,fill=main,width=w)
-    elif g['layout']=='Сетка':
-        cols=max(2,int(math.sqrt(n*1.6)));rows=max(2,math.ceil(n/cols))
-        for r0 in range(rows):
-            for c0 in range(cols):
-                x=(c0+1)*width/(cols+1);y=(r0+1)*height/(rows+1);r=20+16*g['scale'];d.arc((x-r,y-r,x+r,y+r),180,510,fill=main,width=w)
-    else:
-        r=min(width,height)*.22;cx,cy=width/2,height/2
-        for i in range(n):
-            a=2*math.pi*i/n;x=cx+r*math.cos(a);y=cy+r*math.sin(a);d.line((cx,cy,x,y),fill=main,width=w)
-    out=io.BytesIO();img.save(out,format='PNG');return out.getvalue()
+def png_bytes(g,w=1000,h=650):
+    # raster fallback drawing used only for quick download
+    img=Image.new('RGB',(w,h),PALETTES[g['palette']][0]);d=ImageDraw.Draw(img);col=PALETTES[g['palette']][1]
+    n=max(4,min(int(g['repeats']),12));cx,cy=w//2,h//2
+    for i in range(n):
+        a=2*math.pi*i/n;R=min(w,h)*.30;x=cx+R*math.cos(a);y=cy+R*math.sin(a);r=38
+        d.ellipse((x-r,y-r,x+r,y+r),outline=col,width=8);d.arc((x-r*1.5,y-r*1.5,x+r*1.5,y+r*1.5),180,520,fill=col,width=8)
+    out=io.BytesIO();img.save(out,'PNG');return out.getvalue()
 
-def design_card(g,model=None):
-    score,struct,nov,pm=total_score(g,model);st.components.v1.html(render_svg(g,540,310),height=325);c1,c2,c3=st.columns(3);c1.metric('Fitness',f'{score:.3f}');c2.metric('Structure',f'{struct:.2f}');c3.metric('AI Match','—' if pm is None else f'{pm*100:.0f}%');return score
-
-for k,v in {'user':None,'guest':False,'population':[],'generation':0,'selected':[],'final_genome':None}.items():
+# ---------- session ----------
+for k,v in {'user':None,'guest':False,'population':[],'generation':0,'selected':[],'final_genome':None,'nav':'Дизайн-студия','motif':'Қошқар мүйіз','product':'Упаковка','style':'Современный','palette':'Qazaq Red','layout':'Розетка','mutation':.15,'pop_size':12}.items():
     if k not in st.session_state:st.session_state[k]=v
 
+# ---------- auth ----------
 def auth_screen():
-    st.markdown('''<div class="og-hero"><div class="og-kicker">CREATIVE TECH • KAZAKH ETHNO DESIGN</div><div class="og-title">🧬 ORNAMENTAL GENOME</div><div class="og-sub">AI ETHNO DESIGN LAB — персональная эволюционная студия современного графического дизайна на основе казахских орнаментальных мотивов.</div></div>''',unsafe_allow_html=True)
-    c1,c2=st.columns([1.1,1])
+    st.markdown('''<div class="og-auth-wrap"><div class="og-auth-card"><div style="font-family:Georgia,serif;font-size:38px;font-weight:900">ORNAMENTAL GENOME AI</div><div style="letter-spacing:.22em;margin-top:4px;color:#9b6e27">KAZAKH CREATIVE LAB</div><p style="font-size:17px">Эволюционная дизайн-платформа с персональным ИИ-профилем.</p></div></div>''',unsafe_allow_html=True)
+    c0,c1,c2,c3=st.columns([1.5,1.3,1.3,1.5])
     with c1:
-        st.markdown('### Почему это не просто генератор');st.markdown('''<div class="og-card"><span class="og-pill">Ornament DNA</span><span class="og-pill">Evolution</span><span class="og-pill">Personal AI</span><span class="og-pill">My Studio</span><span class="og-pill">SVG / PNG Export</span><p class="og-small">Алгоритм сохраняет происхождение мотива, эволюционно меняет композицию, а персональная модель учится на выборе пользователя.</p></div>''',unsafe_allow_html=True)
-        st.write('')
-        if st.button('🚀 Попробовать без регистрации',use_container_width=True):st.session_state.guest=True;st.rerun()
+        st.subheader('Войти');u=st.text_input('Логин',key='lu');p=st.text_input('Пароль',type='password',key='lp')
+        if st.button('Войти',use_container_width=True):
+            row=login_user(u,p)
+            if row:st.session_state.user=row;st.rerun()
+            else:st.error('Неверный логин или пароль')
+        if st.button('Попробовать как гость',use_container_width=True):st.session_state.guest=True;st.rerun()
     with c2:
-        t1,t2=st.tabs(['Войти','Регистрация'])
-        with t1:
-            u=st.text_input('Логин',key='login_u');p=st.text_input('Пароль',type='password',key='login_p')
-            if st.button('Войти',use_container_width=True):
-                row=login_user(u,p)
-                if row:st.session_state.user=row;st.session_state.guest=False;st.rerun()
-                else:st.error('Неверный логин или пароль.')
-        with t2:
-            d=st.text_input('Имя',key='reg_d');u=st.text_input('Придумайте логин',key='reg_u');p=st.text_input('Придумайте пароль',type='password',key='reg_p')
-            if st.button('Создать аккаунт',use_container_width=True):
-                ok,msg=register_user(u,d,p);(st.success if ok else st.error)(msg)
-    st.info('Прототип конкурса: локальная SQLite-регистрация. Для публичного сервиса базу пользователей нужно вынести в облако (например, Supabase).')
+        st.subheader('Регистрация');d=st.text_input('Имя',key='rd');u=st.text_input('Логин',key='ru');p=st.text_input('Пароль',type='password',key='rp')
+        if st.button('Создать аккаунт',use_container_width=True):
+            ok,msg=register_user(u,d,p);(st.success if ok else st.error)(msg)
 
-if not st.session_state.user and not st.session_state.guest:auth_screen();st.stop()
-user=st.session_state.user;is_guest=st.session_state.guest;display_name='Гость' if is_guest else user['display_name'];user_id=None if is_guest else int(user['id'])
-with st.sidebar:
-    st.markdown('## 🧬 ORNAMENTAL GENOME');st.caption('AI ETHNO DESIGN LAB');st.success(f'Профиль: {display_name}')
-    if not is_guest:model,nlearn=personal_model(user_id);st.metric('Обучающих выборов',nlearn);st.caption('После 8+ разнообразных оценок включается персональная ML-модель.')
-    else:model,nlearn=None,0;st.warning('Гостевой режим: библиотека и AI-профиль не сохраняются.')
-    page=st.radio('Навигация',['🎨 Design Studio','🧬 Evolution Lab','✨ AI Designer','📁 My Studio','🏛 Ornament Library','📊 Research Lab','ℹ️ О проекте'])
-    if st.button('Выйти',use_container_width=True):st.session_state.user=None;st.session_state.guest=False;st.rerun()
+if not st.session_state.user and not st.session_state.guest:
+    auth_screen();st.stop()
 
-if page=='🎨 Design Studio':
-    st.markdown('''<div class="og-hero"><div class="og-kicker">STEP 1 • CREATE</div><div class="og-title">Создай современный дизайн с культурным кодом Казахстана</div><div class="og-sub">Выберите мотив, назначение и визуальный характер. Система создаст стартовое поколение — не одну картинку, а пространство вариантов.</div></div>''',unsafe_allow_html=True)
-    c1,c2,c3,c4=st.columns(4);motif=c1.selectbox('Базовый мотив',list(MOTIFS));product=c2.selectbox('Продукт',PRODUCTS);style=c3.selectbox('Стиль',STYLES,index=1);palette=c4.selectbox('Палитра',list(PALETTES));layout=st.selectbox('Композиция',LAYOUTS,index=1);st.caption(MOTIFS[motif]['note'])
-    if st.button('🧬 СОЗДАТЬ ПОКОЛЕНИЕ',type='primary',use_container_width=True):st.session_state.population=[random_genome(motif,style,layout,palette) for _ in range(8)];st.session_state.generation=1;st.session_state.selected=[];st.session_state.final_genome=None
-    if st.session_state.population:
-        st.markdown(f"### Поколение {st.session_state.generation}");st.caption('Выберите 2–4 варианта, которые хотите развивать дальше.');cols=st.columns(4)
-        for i,g in enumerate(st.session_state.population):
-            with cols[i%4]:
-                design_card(g,model);active=i in st.session_state.selected
-                if st.button(('✅ ' if active else '❤️ ')+f'A{i+1:02d}',key=f'pick_{st.session_state.generation}_{i}',use_container_width=True):
+user=st.session_state.user;uid=None if st.session_state.guest else int(user['id']);display='Гость' if st.session_state.guest else user['display_name']
+model,nlearn=(None,0) if uid is None else personal_model(uid)
+
+# top chrome
+st.markdown(f'''<div class="og-top"><div class="og-brand"><div class="og-logo"><span>✦</span></div><div><b>ORNAMENTAL<br>GENOME AI</b><small>KAZAKH CREATIVE LAB</small></div></div><div class="og-nav"><span class="active">🎨 Дизайн-студия</span><span>🧬 Эволюция</span><span>▣ Библиотека</span><span>▢ Мои дизайны</span><span>▥ ИИ-профиль</span><span>⚗ Исследование</span></div><div class="og-user">◉ {display}⌄</div></div>''',unsafe_allow_html=True)
+
+# navigation as working Streamlit control
+nav_cols=st.columns([.18,.64,.18])
+with nav_cols[1]:
+    nav=st.radio('Раздел', ['Дизайн-студия','Эволюция','Библиотека','Мои дизайны','ИИ-профиль','Исследование'], horizontal=True, label_visibility='collapsed', key='nav')
+
+# =========================================================
+# MAIN DESIGN STUDIO — closest to supplied screenshot
+# =========================================================
+if nav=='Дизайн-студия':
+    left,center,right=st.columns([.225,.58,.195],gap='small')
+    with left:
+        st.markdown('<div class="og-section-title"><span class="og-step">1</span>Выберите мотив</div>',unsafe_allow_html=True)
+        # visual library grid
+        cards=[]
+        for name,(cat,col) in MOTIFS.items():
+            active=' active' if name==st.session_state.motif else ''
+            cards.append(f'<div class="og-motif-card{active}">{tile_svg(name,col)}<b>{name}</b></div>')
+        st.markdown('<div class="og-motif-grid">'+''.join(cards)+'</div>',unsafe_allow_html=True)
+        motif=st.selectbox('Мотив',list(MOTIFS),index=list(MOTIFS).index(st.session_state.motif),label_visibility='collapsed')
+        st.session_state.motif=motif
+
+        st.markdown('<div class="og-section-title"><span class="og-step">2</span>Выберите продукт</div>',unsafe_allow_html=True)
+        icons={'Логотип':'◈','Упаковка':'▣','Постер':'▤','Текстиль':'▧','Сувенир':'♢','Соцсети':'▦'}
+        st.markdown('<div class="og-product-grid">'+''.join([f'<div class="og-product{" active" if p==st.session_state.product else ""}"><span class="og-icon">{icons[p]}</span>{p}</div>' for p in PRODUCTS])+'</div>',unsafe_allow_html=True)
+        product=st.selectbox('Продукт',PRODUCTS,index=PRODUCTS.index(st.session_state.product),label_visibility='collapsed');st.session_state.product=product
+
+        st.markdown('<div class="og-section-title"><span class="og-step">3</span>Стиль и цветовая палитра</div>',unsafe_allow_html=True)
+        style=st.segmented_control('Стиль',STYLES,default=st.session_state.style,label_visibility='collapsed');st.session_state.style=style or st.session_state.style
+        palette=st.selectbox('Палитра',list(PALETTES),index=list(PALETTES).index(st.session_state.palette));st.session_state.palette=palette
+        sw=''.join([f'<span class="og-swatch" style="background:{c}"></span>' for c in PALETTES[palette]])
+        st.markdown(f'<div class="og-swatches">{sw}<span class="og-swatch" style="display:grid;place-items:center;background:#08384a">＋</span></div>',unsafe_allow_html=True)
+        st.write('')
+        create=st.button('🚀 СОЗДАТЬ ПОКОЛЕНИЕ',type='primary',use_container_width=True)
+        if create:
+            prog=st.progress(0,text='Создаём первое поколение...')
+            for pct in [12,28,46,63,81,100]:time.sleep(.08);prog.progress(pct,text='Скрещивание признаков и построение композиции...')
+            st.session_state.population=[random_genome(motif,st.session_state.style,st.session_state.layout,palette) for _ in range(st.session_state.pop_size)]
+            st.session_state.generation=1;st.session_state.selected=[];st.session_state.final_genome=None;prog.empty();st.rerun()
+
+    with center:
+        st.markdown('''<div class="og-hero"><h1>Эволюция казахского орнамента</h1><p>ИИ изучает ваш дизайн-вкус — вы создаёте современные композиции</p><div class="motto">Дәстүр<br>Жаңашылдық<br>Болашақ</div></div>''',unsafe_allow_html=True)
+        pop=st.session_state.population
+        if pop and len(pop)>=2:a,b=pop[0],pop[1]
+        else:a=random_genome(motif,st.session_state.style,'Розетка',palette);b=random_genome(motif,st.session_state.style,'Бордюр',palette)
+        child=mutate(crossover(a,b),st.session_state.mutation)
+        st.markdown(f'''<div class="og-main-card"><div class="og-evo-title">Процесс эволюции</div><div class="og-evo-row"><div class="og-stage"><small>Родитель 1</small>{tile_svg(a['motif'],PALETTES[a['palette']][1],PALETTES[a['palette']][2])}</div><div class="og-arrow">×</div><div class="og-stage"><small>Родитель 2</small>{tile_svg(b['motif'],PALETTES[b['palette']][2],PALETTES[b['palette']][1])}</div><div class="og-arrow">→</div><div class="og-stage"><small>Скрещивание</small>{composition_svg(child,120,120)}</div><div class="og-arrow">→</div><div class="og-stage"><small>Мутация</small>{tile_svg(child['motif'],'#9d9b91',PALETTES[child['palette']][1])}</div><div class="og-arrow">→</div><div class="og-stage"><small>Новая композиция</small>{composition_svg(child,120,120)}</div></div><div class="og-progress-bg"><div class="og-progress-fill"></div></div><div style="font-size:12px;margin-top:6px;color:#1c6072">Создание нового поколения… <b style="float:right">75%</b></div></div>''',unsafe_allow_html=True)
+        st.write('')
+        if not pop:
+            pop=[random_genome(motif,st.session_state.style,st.session_state.layout,palette) for _ in range(12)]
+        cards=[]
+        ranked=sorted([(total_score(g,model)[0],i,g) for i,g in enumerate(pop)],reverse=True)
+        for rank,(score,i,g) in enumerate(ranked[:12],1):
+            heart='♥' if i in st.session_state.selected else '♡'
+            cards.append(f'<div class="og-design"><div class="art">{composition_svg(g,150,150)}</div><div class="meta"><div><b>A{i+1:02d}</b><br><small>{score:.2f}</small></div><span class="og-heart">{heart}</span></div></div>')
+        st.markdown(f'''<div class="og-main-card"><div class="og-gen-head"><h3>Поколение {max(1,st.session_state.generation)} <span style="font-size:12px;font-weight:500">12 вариантов</span></h3><div class="sort">Сортировка: Лучшие⌄ &nbsp;▦</div></div><div class="og-grid">{"".join(cards)}</div></div>''',unsafe_allow_html=True)
+        st.caption('Выберите понравившиеся варианты ниже — они станут «родителями» следующего поколения.')
+        choice_cols=st.columns(6)
+        for j,(score,i,g) in enumerate(ranked[:12]):
+            with choice_cols[j%6]:
+                if st.button(('✅ ' if i in st.session_state.selected else '♡ ')+f'A{i+1:02d}',key=f'sel_{st.session_state.generation}_{i}',use_container_width=True):
                     if i in st.session_state.selected:st.session_state.selected.remove(i)
-                    else:st.session_state.selected.append(i)
-                    if user_id is not None:save_rating(user_id,g,1,1.0)
+                    else:
+                        st.session_state.selected.append(i)
+                        if uid is not None:save_rating(uid,g,1,1.0)
                     st.rerun()
-        cc1,cc2=st.columns([2,1])
-        with cc1:
-            if st.button('⚡ Развить выбранные в следующем поколении',use_container_width=True):
-                sel=[st.session_state.population[i] for i in st.session_state.selected]
-                if len(sel)<2:st.warning('Выберите минимум 2 варианта.')
+        bc1,bc2=st.columns([1,1])
+        with bc1:
+            if st.button('🧬 Следующее поколение',use_container_width=True):
+                chosen=[pop[i] for i in st.session_state.selected if i<len(pop)]
+                if len(chosen)<2:st.warning('Сначала выберите минимум 2 варианта.')
                 else:
+                    ph=st.empty();bar=st.progress(0)
+                    for p in range(0,101,20):ph.info(f'Эволюция поколения {st.session_state.generation+1}: crossover → mutation → rendering');bar.progress(p);time.sleep(.09)
                     new=[]
-                    while len(new)<8:
-                        a,b=random.sample(sel,2);new.append(mutate(crossover(a,b),.22))
-                    st.session_state.population=new;st.session_state.generation+=1;st.session_state.selected=[];st.rerun()
-        with cc2:
-            if st.button('🏆 Выбрать лучший автоматически',use_container_width=True):st.session_state.final_genome=max(st.session_state.population,key=lambda g:total_score(g,model)[0]);st.success('Финальный кандидат выбран.')
-    if st.session_state.final_genome:
-        g=st.session_state.final_genome;st.markdown('## 🏆 Финальный дизайн');a,b=st.columns([1.25,.75])
-        with a:design_card(g,model)
-        with b:
-            st.markdown('### Ornament DNA');st.json({k:g[k] for k in ['motif','style','layout','palette','scale','rotation','repeats','spacing','density','curve','symmetry']});svg=render_svg(g,1000,600);png=svg_to_png_fallback(g,1000,600);st.download_button('⬇ Скачать SVG',svg,file_name='ornamental_genome.svg',mime='image/svg+xml',use_container_width=True);st.download_button('⬇ Скачать PNG',png,file_name='ornamental_genome.png',mime='image/png',use_container_width=True)
-            if user_id is not None:
-                nm=st.text_input('Название проекта','Мой этнодизайн')
-                if st.button('💾 Сохранить в My Studio',use_container_width=True):save_design(user_id,nm,g['motif'],g,svg);st.success('Сохранено в My Studio.')
-elif page=='🧬 Evolution Lab':
-    st.markdown('## 🧬 Evolution Lab');st.write('Здесь видно, **почему проект называется «Орнаментальный геном»**: два родителя передают гены потомку, затем происходит мутация.');motif=st.selectbox('Мотив',list(MOTIFS),key='evo_m')
-    if 'evo_parents' not in st.session_state:st.session_state.evo_parents=(random_genome(motif,'Balanced Ethno','Розетка','Heritage Gold'),random_genome(motif,'Minimal Ethno','Бордюр','Sky'))
-    if st.button('🎲 Новые родители'):st.session_state.evo_parents=(random_genome(motif,random.choice(STYLES),random.choice(LAYOUTS),random.choice(list(PALETTES))),random_genome(motif,random.choice(STYLES),random.choice(LAYOUTS),random.choice(list(PALETTES))))
-    a,b=st.session_state.evo_parents;child=mutate(crossover(a,b),.28);c1,c2,c3=st.columns(3)
-    with c1:st.subheader('Родитель A');design_card(a,model)
-    with c2:st.subheader('Родитель B');design_card(b,model)
-    with c3:st.subheader('Потомок');design_card(child,model)
-    st.markdown('#### Сравнение генов');st.dataframe(pd.DataFrame([{'Ген':k,'A':a[k],'B':b[k],'Потомок':child[k]} for k in ['scale','rotation','repeats','spacing','density','curve','stroke','symmetry']]),use_container_width=True,hide_index=True)
-elif page=='✨ AI Designer':
-    st.markdown('## ✨ AI Designer — мой Design DNA')
-    if is_guest:st.warning('Персональный AI-профиль работает после регистрации.')
+                    while len(new)<st.session_state.pop_size:
+                        pa,pb=random.sample(chosen,2);new.append(mutate(crossover(pa,pb),st.session_state.mutation))
+                    st.session_state.population=new;st.session_state.generation+=1;st.session_state.selected=[];bar.empty();ph.empty();st.rerun()
+        with bc2:
+            if st.button('🏆 Выбрать лучший дизайн',use_container_width=True):
+                st.session_state.final_genome=max(pop,key=lambda g:total_score(g,model)[0]);st.rerun()
+
+    with right:
+        st.markdown('<div class="og-panel"><div class="og-r-title">Параметры эволюции</div></div>',unsafe_allow_html=True)
+        st.session_state.pop_size=st.selectbox('Размер популяции',[8,12,16,20],index=[8,12,16,20].index(st.session_state.pop_size))
+        gens=st.selectbox('Поколений',[3,5,7,10],index=1)
+        st.session_state.mutation=st.select_slider('Мутация',options=[.05,.10,.15,.20,.25,.30],value=st.session_state.mutation)
+        preserve=st.toggle('Сохранять стиль мотива',value=True)
+        st.write('')
+        cat,col=MOTIFS[motif]
+        st.markdown(f'''<div class="og-panel"><div class="og-r-title">О мотиве⌄</div><div class="og-motif-info"><div class="og-info-thumb">{tile_svg(motif,col)}</div><div class="og-copy"><b style="font-size:15px">{motif}</b><br>{cat}. Авторская параметрическая интерпретация мотива для цифрового эксперимента.<div class="og-link">Больше информации →</div></div></div></div>''',unsafe_allow_html=True)
+        st.write('')
+        preview_g=st.session_state.final_genome or (pop[0] if pop else a)
+        core=tile_svg(preview_g['motif'],'#f6e4c5','#d63a34')
+        st.markdown(f'''<div class="og-panel"><div class="og-r-title">Применить на продукте⌄</div><div class="og-pack"><div class="og-box"><div class="og-box-strip">{core}</div><div class="og-box-text">QAZAQ<br><b>CHOCOLATE</b></div></div></div><div class="og-download">⬇ Скачать дизайн⌄</div><div class="og-formats"><span class="og-format">PNG</span><span class="og-format">SVG</span><span class="og-format">PDF</span><span class="og-format">JPG</span></div></div>''',unsafe_allow_html=True)
+        svg=full_design_svg(preview_g)
+        st.download_button('Скачать SVG',svg,file_name='ornamental_genome.svg',mime='image/svg+xml',use_container_width=True)
+        st.download_button('Скачать PNG',png_bytes(preview_g),file_name='ornamental_genome.png',mime='image/png',use_container_width=True)
+        if uid is not None:
+            name=st.text_input('Название дизайна','Qazaq Design')
+            if st.button('💾 Сохранить в My Studio',use_container_width=True):save_design(uid,name,preview_g['motif'],preview_g,svg);st.success('Сохранено')
+
+elif nav=='Эволюция':
+    st.markdown('<div class="og-shell"><div class="og-hero"><h1>Evolution Lab</h1><p>Родители → скрещивание → мутация → новый вариант</p></div></div>',unsafe_allow_html=True)
+    a=random_genome(st.session_state.motif,st.session_state.style,'Розетка',st.session_state.palette);b=random_genome(st.session_state.motif,st.session_state.style,'Бордюр',st.session_state.palette);c=mutate(crossover(a,b),st.session_state.mutation)
+    cols=st.columns(3)
+    for col,title,g in zip(cols,['Родитель A','Родитель B','Потомок'],[a,b,c]):
+        with col:st.subheader(title);st.components.v1.html(full_design_svg(g,520,350),height=365)
+    st.dataframe(pd.DataFrame([{'Ген':k,'A':a[k],'B':b[k],'Потомок':c[k]} for k in ['scale','rotation','repeats','spacing','density','curve','stroke','symmetry']]),use_container_width=True,hide_index=True)
+
+elif nav=='Библиотека':
+    st.markdown('<div class="og-shell"><div class="og-hero"><h1>Библиотека мотивов</h1><p>Источники, категории и цифровые векторизации</p></div></div>',unsafe_allow_html=True)
+    cols=st.columns(3)
+    for i,(name,(cat,col)) in enumerate(MOTIFS.items()):
+        with cols[i%3]:
+            st.markdown(f'<div class="og-main-card" style="margin-bottom:12px;text-align:center">{tile_svg(name,col)}<h3>{name}</h3><p>{cat}</p><small>В финальной версии: источник, страница/музейный объект, автор векторизации, допустимые трансформации.</small></div>',unsafe_allow_html=True)
+
+elif nav=='Мои дизайны':
+    st.markdown('<div class="og-shell"><div class="og-hero"><h1>Мои дизайны</h1><p>Персональная библиотека сохранённых работ</p></div></div>',unsafe_allow_html=True)
+    if uid is None:st.warning('Войдите в аккаунт, чтобы сохранять библиотеку.')
     else:
-        model,nlearn=personal_model(user_id);st.progress(min(nlearn/20,1.0),text=f'Собрано {nlearn} выборов. Для прототипа модель включается после 8.');st.write('ИИ не определяет «правильность» культуры. Он изучает **индивидуальные дизайнерские предпочтения пользователя**.');qmotif=st.selectbox('Мотив для калибровки',list(MOTIFS),key='ai_m');pair=[random_genome(qmotif,'Minimal Ethno',random.choice(LAYOUTS),random.choice(list(PALETTES))),random_genome(qmotif,'Bold Graphic',random.choice(LAYOUTS),random.choice(list(PALETTES)))];c1,c2=st.columns(2)
-        for i,g in enumerate(pair):
-            with [c1,c2][i]:
-                design_card(g,model);ca,cb=st.columns(2)
-                if ca.button('❤️ Нравится',key=f'like_{i}',use_container_width=True):save_rating(user_id,g,1,1.0);st.rerun()
-                if cb.button('✖ Не моё',key=f'dislike_{i}',use_container_width=True):save_rating(user_id,g,0,0.0);st.rerun()
-elif page=='📁 My Studio':
-    st.markdown('## 📁 My Studio')
-    if is_guest:st.warning('В гостевом режиме проекты не сохраняются. Создайте аккаунт.')
-    else:
-        designs=get_designs(user_id)
-        if not designs:st.info('Пока пусто. Сохраните финальный дизайн из Design Studio.')
+        ds=get_designs(uid)
+        if not ds:st.info('Пока нет сохранённых дизайнов.')
         else:
             cols=st.columns(3)
-            for i,d in enumerate(designs):
-                with cols[i%3]:
-                    st.markdown(f"### {d['name']}");st.components.v1.html(d['svg'],height=280);st.caption(f"{d['motif']} • {d['created_at']}");st.download_button('SVG',d['svg'],file_name=f"OG_{d['id']}.svg",mime='image/svg+xml',key=f"dsvg_{d['id']}",use_container_width=True)
-elif page=='🏛 Ornament Library':
-    st.markdown('## 🏛 Ornament Library');st.write('Библиотека мотивов — культурная база проекта. В конкурсной версии каждый мотив должен иметь источник и паспорт происхождения.')
-    for name,meta in MOTIFS.items():
-        with st.expander(f"{name} — {meta['category']}"):
-            demo=random_genome(name,'Balanced Ethno','Центральная','Heritage Gold');c1,c2=st.columns([.7,1.3])
-            with c1:st.components.v1.html(render_svg(demo,440,280),height=295)
-            with c2:st.write(meta['note']);st.markdown('**Статус в прототипе:** авторская параметрическая интерпретация для вычислительного эксперимента; не музейная копия.');st.markdown('**Перед финальной подачей:** добавить источник, страницу/объект, автора векторизации и допустимые преобразования.')
-elif page=='📊 Research Lab':
-    st.markdown('## 📊 Research Lab — GA vs Random');st.write('Научная часть продукта: при одинаковом вычислительном бюджете сравниваем эволюционный поиск со случайным.');r1,r2,r3=st.columns(3);motif=r1.selectbox('Мотив',list(MOTIFS),key='res_m');trials=r2.slider('Независимых запусков',5,30,12);budget=r3.slider('Кандидатов в запуске',30,180,80,10)
-    if st.button('▶ Провести эксперимент',type='primary'):
-        data=[];prog=st.progress(0)
-        for t in range(trials):
-            candidates=[random_genome(motif,'Balanced Ethno','Розетка','Heritage Gold') for _ in range(budget)];rnd=max(total_score(g,None)[0] for g in candidates);popn=10;pop=[random_genome(motif,'Balanced Ethno','Розетка','Heritage Gold') for _ in range(popn)];evals=popn
-            while evals+popn<=budget:
-                pop=sorted(pop,key=lambda g:total_score(g,None)[0],reverse=True);parents=pop[:4];new=parents[:2]
-                while len(new)<popn:
-                    a,b=random.sample(parents,2);new.append(mutate(crossover(a,b),.22))
-                pop=new;evals+=popn
-            ga=max(total_score(g,None)[0] for g in pop);data.append({'run':t+1,'GA':ga,'Random':rnd,'difference':ga-rnd});prog.progress((t+1)/trials)
-        st.session_state['research_df']=pd.DataFrame(data)
-    if 'research_df' in st.session_state:
-        df=st.session_state['research_df'];c1,c2,c3=st.columns(3);c1.metric('Средний GA',f'{df.GA.mean():.3f}');c2.metric('Средний Random',f'{df.Random.mean():.3f}');c3.metric('Преимущество GA',f'{df.difference.mean():+.3f}');st.line_chart(df.set_index('run')[['GA','Random']]);st.dataframe(df,use_container_width=True,hide_index=True);st.download_button('⬇ Скачать CSV',df.to_csv(index=False).encode('utf-8-sig'),file_name='ga_vs_random.csv',mime='text/csv')
-else:
-    st.markdown('''<div class="og-hero"><div class="og-kicker">SCIENCE × DESIGN × CULTURE</div><div class="og-title">О проекте</div><div class="og-sub">«Орнаментальный геном» — исследовательский прототип генеративного этнодизайна. Традиционный мотив выступает источником, алгоритм — инструментом поиска композиционных вариантов, человек — финальным дизайнером.</div></div>''',unsafe_allow_html=True)
-    st.markdown('''### Что делает продукт
-1. Кодирует композицию набором генов.
-2. Создаёт популяцию дизайнерских вариантов.
-3. Применяет selection → crossover → mutation.
-4. Позволяет пользователю формировать персональный Design DNA.
-5. Сохраняет проекты в My Studio.
-6. Экспортирует дизайн в SVG и PNG.
-7. Отдельно проводит научный эксперимент GA vs Random.
+            for i,d in enumerate(ds):
+                with cols[i%3]:st.components.v1.html(d['svg'],height=260);st.markdown(f"**{d['name']}** · {d['motif']}");st.download_button('SVG',d['svg'],file_name=f'OG_{d["id"]}.svg',mime='image/svg+xml',key=f'd_{d["id"]}')
 
-### Важное ограничение
-Программа не объявляет сгенерированный результат новым традиционным орнаментом и не оценивает культурную «правильность». Встроенные контуры — авторские стилизованные модели для вычислительного прототипа. Для конкурсной финальной версии библиотека должна быть заменена/уточнена на собственные векторизации документированных источников.
-''')
+elif nav=='ИИ-профиль':
+    st.markdown('<div class="og-shell"><div class="og-hero"><h1>Мой AI Design DNA</h1><p>Персональная модель учится на ваших дизайнерских выборах</p></div></div>',unsafe_allow_html=True)
+    if uid is None:st.warning('Для персонального ИИ нужен аккаунт.')
+    else:
+        st.metric('Обучающих выборов',nlearn)
+        st.progress(min(nlearn/20,1.0),text='После 8 разнообразных выборов включается персональная модель.')
+        st.info('ИИ не оценивает культурную «правильность». Он прогнозирует только ваши индивидуальные дизайнерские предпочтения.')
+        pair=[random_genome(st.session_state.motif,'Минимал',random.choice(LAYOUTS),random.choice(list(PALETTES))),random_genome(st.session_state.motif,'Современный',random.choice(LAYOUTS),random.choice(list(PALETTES)))]
+        cols=st.columns(2)
+        for i,g in enumerate(pair):
+            with cols[i]:st.components.v1.html(full_design_svg(g,520,350),height=365);a1,a2=st.columns(2)
+            with a1:
+                if st.button('♥ Нравится',key=f'ai_l{i}',use_container_width=True):save_rating(uid,g,1,1.0);st.rerun()
+            with a2:
+                if st.button('✕ Не моё',key=f'ai_d{i}',use_container_width=True):save_rating(uid,g,0,0.0);st.rerun()
+
+else:
+    st.markdown('<div class="og-shell"><div class="og-hero"><h1>Research Lab</h1><p>GA против случайного поиска при одинаковом вычислительном бюджете</p></div></div>',unsafe_allow_html=True)
+    c1,c2,c3=st.columns(3);mot=c1.selectbox('Мотив',list(MOTIFS));trials=c2.slider('Запусков',5,30,12);budget=c3.slider('Кандидатов',40,200,80,10)
+    if st.button('▶ Провести эксперимент',type='primary'):
+        data=[];bar=st.progress(0)
+        for t in range(trials):
+            rnd=max(total_score(random_genome(mot,'Современный','Розетка','Qazaq Red'))[0] for _ in range(budget))
+            pop=[random_genome(mot,'Современный','Розетка','Qazaq Red') for _ in range(10)];evals=10
+            while evals+10<=budget:
+                pop=sorted(pop,key=lambda g:total_score(g)[0],reverse=True);parents=pop[:4];new=parents[:2]
+                while len(new)<10:new.append(mutate(crossover(*random.sample(parents,2)),.15))
+                pop=new;evals+=10
+            ga=max(total_score(g)[0] for g in pop);data.append({'run':t+1,'GA':ga,'Random':rnd,'difference':ga-rnd});bar.progress((t+1)/trials)
+        st.session_state.research_df=pd.DataFrame(data)
+    if 'research_df' in st.session_state:
+        df=st.session_state.research_df;c1,c2,c3=st.columns(3);c1.metric('Средний GA',f'{df.GA.mean():.3f}');c2.metric('Средний Random',f'{df.Random.mean():.3f}');c3.metric('Δ',f'{df.difference.mean():+.3f}');st.line_chart(df.set_index('run')[['GA','Random']]);st.dataframe(df,use_container_width=True,hide_index=True);st.download_button('CSV',df.to_csv(index=False).encode('utf-8-sig'),'ga_vs_random.csv','text/csv')
+
+st.markdown('<div style="padding:14px 24px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;color:#cad9dc;display:flex;justify-content:space-between"><span>✦ ORNAMENTAL GENOME AI · Kazakh Creative Lab</span><span>Традиция × Технологии × Творчество × Будущее</span><span>Made with ♥ in Kazakhstan</span></div>',unsafe_allow_html=True)
