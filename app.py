@@ -21,6 +21,15 @@ st.markdown("""<style>
 .hero h1{margin:0;color:#fff}.hero p{color:#d9eaed}
 .card{background:#fbf5e8;color:#0b3b4d;padding:18px;border-radius:20px;margin:12px 0}
 div[data-testid=stButton] button{border-radius:12px;font-weight:800}
+
+header[data-testid="stHeader"]{display:none!important}
+[data-testid="stToolbar"]{display:none!important}
+[data-testid="stDecoration"]{display:none!important}
+#MainMenu{visibility:hidden}
+footer{visibility:hidden}
+[data-baseweb="select"] > div{background:#fff!important;color:#173b48!important}
+[data-baseweb="select"] span{color:#173b48!important}
+[data-baseweb="popover"] *{color:#173b48!important}
 </style>""",unsafe_allow_html=True)
 def rgb(h): h=h[1:]; return tuple(int(h[i:i+2],16) for i in (0,2,4))
 def motif(i,color,size=180,mirror=False):
@@ -66,7 +75,7 @@ def render(g,W=600,H=410):
     return b
 def score(g): return float(np.clip(.83+.05*(g["repeats"]%2==0)-abs(g["scale"]-.72)*.12-abs(g["spacing"]-.96)*.08,0,.99))
 def png(im):q=io.BytesIO();im.save(q,"PNG");return q.getvalue()
-for k,v in {"pop":[],"gen":0,"sel":[],"final":None}.items():
+for k,v in {"population":[],"gen":0,"sel":[],"final":None}.items():
     if k not in st.session_state:st.session_state[k]=v
 with st.sidebar:
     st.markdown("## ◈ ORNAMENTAL<br>GENOME AI",unsafe_allow_html=True);st.caption("KAZAKH CREATIVE LAB")
@@ -84,38 +93,38 @@ with tabs[0]:
         bar=st.progress(0);ph=st.empty()
         for t,v in [("Считываем мастер-мотив",.2),("Кодируем Ornament DNA",.4),("Скрещиваем композиционные гены",.65),("Контролируем мутацию",.85),("Поколение готово",1)]:
             ph.markdown("### 🧬 "+t);bar.progress(v);time.sleep(.25)
-        st.session_state.pop=[genome(mi,pal,lay) for _ in range(12)];st.session_state.gen=1;st.session_state.sel=[];st.rerun()
+        st.session_state['population']=[genome(mi,pal,lay) for _ in range(12)];st.session_state['gen']=1;st.session_state['sel']=[];st.rerun()
     st.markdown("<div class=card><h3>Как рождается новый дизайн</h3>",unsafe_allow_html=True)
     a=genome(mi,pal,lay);b=mutate(a,.8);c=mutate(cross(a,b),.3)
     cc=st.columns(3)
     for col,g,t in zip(cc,[a,b,c],["Родитель 1","Родитель 2","Потомок"]):
         with col:st.image(render(g,320,220),use_container_width=True);st.caption(t)
     st.markdown("</div>",unsafe_allow_html=True)
-    if st.session_state.pop:
-        st.markdown(f"<div class=card><h2>Поколение {st.session_state.gen} · 12 вариантов</h2>",unsafe_allow_html=True)
+    if st.session_state['population']:
+        st.markdown(f"<div class=card><h2>Поколение {st.session_state['gen']} · 12 вариантов</h2>",unsafe_allow_html=True)
         cols=st.columns(6)
-        for i,g in enumerate(st.session_state.pop):
+        for i,g in enumerate(st.session_state['population']):
             with cols[i%6]:
                 st.image(render(g,330,230),use_container_width=True);st.caption(f"A{i+1:02d} · {score(g):.2f}")
-                if st.button(("♥" if i in st.session_state.sel else "♡")+f" A{i+1:02d}",key=f"{st.session_state.gen}_{i}"):
-                    if i in st.session_state.sel:st.session_state.sel.remove(i)
-                    else:st.session_state.sel.append(i)
+                if st.button(("♥" if i in st.session_state['sel'] else "♡")+f" A{i+1:02d}",key=f"{st.session_state['gen']}_{i}"):
+                    if i in st.session_state['sel']:st.session_state['sel'].remove(i)
+                    else:st.session_state['sel'].append(i)
                     st.rerun()
         st.markdown("</div>",unsafe_allow_html=True)
         x,y=st.columns(2)
         if x.button("🧬 Следующее поколение",use_container_width=True):
-            ps=[st.session_state.pop[i] for i in st.session_state.sel]
+            ps=[st.session_state['population'][i] for i in st.session_state['sel']]
             if len(ps)<2:st.warning("Выберите минимум 2 варианта.")
             else:
                 bar=st.progress(0)
                 for v in [.2,.45,.7,.9,1]:bar.progress(v);time.sleep(.28)
-                st.session_state.pop=[mutate(cross(*random.sample(ps,2))) for _ in range(12)]
-                st.session_state.gen+=1;st.session_state.sel=[];st.rerun()
+                st.session_state['population']=[mutate(cross(*random.sample(ps,2))) for _ in range(12)]
+                st.session_state['gen']+=1;st.session_state['sel']=[];st.rerun()
         if y.button("🏆 Финальный вариант",use_container_width=True):
-            pool=[st.session_state.pop[i] for i in st.session_state.sel] or st.session_state.pop
-            st.session_state.final=max(pool,key=score)
-    if st.session_state.final:
-        g=st.session_state.final;im=render(g,1000,650)
+            pool=[st.session_state['population'][i] for i in st.session_state['sel']] or st.session_state['population']
+            st.session_state['final']=max(pool,key=score)
+    if st.session_state['final']:
+        g=st.session_state['final'];im=render(g,1000,650)
         st.markdown("<div class=card><h2>🏆 Финальный дизайн</h2>",unsafe_allow_html=True)
         c1,c2=st.columns([1.4,.6])
         with c1:st.image(im,use_container_width=True)
@@ -134,7 +143,7 @@ with tabs[2]:
     st.markdown("</div>",unsafe_allow_html=True)
 with tabs[3]:
     st.markdown("<div class=card><h2>👕 Применение</h2><p>Финальный орнамент можно использовать для упаковки, постера, текстиля, сувенира и фирменного паттерна.</p>",unsafe_allow_html=True)
-    if st.session_state.final:st.image(render(st.session_state.final,900,500),use_container_width=True)
+    if st.session_state['final']:st.image(render(st.session_state['final'],900,500),use_container_width=True)
     else:st.info("Сначала выберите финальный дизайн.")
     st.markdown("</div>",unsafe_allow_html=True)
 with tabs[4]:
